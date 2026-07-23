@@ -1,0 +1,2 @@
+# This is a separate Godot project (Starter Kit City Builder).
+# .gdignore prevents the FPS project from importing its assets.
