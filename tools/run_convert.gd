@@ -100,7 +100,8 @@ func _build_mesh_library() -> MeshLibrary:
 		mesh_library.set_item_mesh(i, mesh)
 		mesh_library.set_item_mesh_transform(i, Transform3D().scaled(CELL_SIZE))
 
-		var trimesh_shape := mesh.create_trimesh_shape()
+		# Generate trimesh collision from scaled mesh
+		var trimesh_shape := _create_scaled_trimesh(mesh, CELL_SIZE)
 		if trimesh_shape:
 			mesh_library.set_item_shapes(i, [trimesh_shape])
 
@@ -132,6 +133,18 @@ func _load_map_json() -> Array:
 		return []
 
 	return data["cells"]
+
+
+func _create_scaled_trimesh(mesh: Mesh, scale: Vector3) -> ConcavePolygonShape3D:
+	var scaled := ArrayMesh.new()
+	for s in range(mesh.get_surface_count()):
+		var arrays := mesh.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for v in range(verts.size()):
+			verts[v] *= scale
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		scaled.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return scaled.create_trimesh_shape()
 
 
 func _extract_mesh(packed_scene_path: String) -> Mesh:
