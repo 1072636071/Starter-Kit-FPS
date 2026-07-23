@@ -2,7 +2,6 @@ extends Node3D
 
 @export var player: Node3D
 
-@onready var raycast = $RayCast
 @onready var muzzle_a = $MuzzleA
 @onready var muzzle_b = $MuzzleB
 
@@ -46,23 +45,30 @@ func destroy():
 # Shoot when timer hits 0
 
 func _on_timer_timeout():
-	raycast.force_raycast_update()
-
-	if raycast.is_colliding():
-		var collider = raycast.get_collider()
-
-		if collider.has_method("damage"):  # Raycast collides with player
-			
-			# Play muzzle flash animation(s)
-
-			muzzle_a.frame = 0
-			muzzle_a.play("default")
-			muzzle_a.rotation_degrees.z = randf_range(-45, 45)
-
-			muzzle_b.frame = 0
-			muzzle_b.play("default")
-			muzzle_b.rotation_degrees.z = randf_range(-45, 45)
-
-			Audio.play("sounds/enemy_attack.ogg")
-
-			collider.damage(5)  # Apply damage to player
+	# Play muzzle flash animation(s)
+	
+	muzzle_a.frame = 0
+	muzzle_a.play("default")
+	muzzle_a.rotation_degrees.z = randf_range(-45, 45)
+	
+	muzzle_b.frame = 0
+	muzzle_b.play("default")
+	muzzle_b.rotation_degrees.z = randf_range(-45, 45)
+	
+	Audio.play("sounds/enemy_attack.ogg")
+	
+	# Spawn projectile toward player
+	var projectile = preload("res://objects/projectile.tscn")
+	var projectile_instance = projectile.instantiate()
+	
+	var shoot_direction = (player.global_position + Vector3(0, 0.5, 0) - global_position).normalized()
+	
+	projectile_instance.direction = shoot_direction
+	projectile_instance.speed = 30.0
+	projectile_instance.damage = 5.0
+	projectile_instance.max_distance = 30.0
+	projectile_instance.color = Color(1, 0.2, 0.2) # Red enemy projectile
+	projectile_instance.shooter = self
+	
+	get_tree().root.add_child(projectile_instance)
+	projectile_instance.global_position = global_position

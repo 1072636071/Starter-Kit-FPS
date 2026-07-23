@@ -18,3 +18,9 @@ mono_crash.*.json
 build/
 # https://github.com/godotengine/godot/issues/82270
 *~*.TMP
+
+# Temp files
+.tmp_*
+
+# Tool memory
+.workbuddy/

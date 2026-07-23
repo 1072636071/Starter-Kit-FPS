@@ -1,0 +1,179 @@
+extends CharacterBody3D
+## 远程怪物：与玩家保持距离，发射弹幕攻击
+
+@export var player: Node3D
+@export var move_speed: float = 2.5
+@export var chase_range: float = 30.0
+@export var preferred_distance: float = 10.0
+@export var too_close_distance: float = 5.0
+@export var attack_damage: float = 8.0
+@export var attack_cooldown: float = 1.8
+@export var burst_count: int = 3
+@export var burst_interval: float = 0.15
+@export var health: float = 80.0
+
+var gravity: float = 0.0
+var destroyed := false
+var _can_attack := true
+var _is_attacking := false
+
+@onready var model: Node3D = $Model
+@onready var attack_timer: Timer = $AttackTimer
+@onready var shoot_point: Marker3D = $ShootPoint
+
+func _ready():
+	attack_timer.wait_time = attack_cooldown
+	attack_timer.one_shot = true
+	attack_timer.timeout.connect(_on_attack_cooldown)
+	
+	# 如果未指定 player，自动查找
+	if not player:
+		player = get_tree().get_first_node_in_group("player")
+	if not player:
+		var players = get_tree().get_nodes_in_group("player")
+		if players.size() > 0:
+			player = players[0]
+
+func _physics_process(delta):
+	if destroyed or not player:
+		return
+	
+	# 重力
+	gravity += 20.0 * delta
+	if gravity > 0 and is_on_floor():
+		gravity = 0.0
+	
+	var to_player := player.global_position - global_position
+	to_player.y = 0.0
+	var distance := to_player.length()
+	
+	# 面向玩家
+	if distance > 0.1:
+		var look_target := global_position + to_player.normalized()
+		look_target.y = global_position.y
+		look_at(look_target, Vector3.UP, true)
+	
+	# 移动逻辑：保持理想距离
+	if distance < chase_range and not _is_attacking:
+		var direction := to_player.normalized()
+		if distance < too_close_distance:
+			# 太近了，后退
+			velocity.x = -direction.x * move_speed
+			velocity.z = -direction.z * move_speed
+			_animate_walk(delta)
+		elif distance > preferred_distance + 2.0:
+			# 太远了，靠近
+			velocity.x = direction.x * move_speed
+			velocity.z = direction.z * move_speed
+			_animate_walk(delta)
+		else:
+			# 在理想距离，横向游走
+			var strafe := direction.cross(Vector3.UP)
+			velocity.x = strafe.x * move_speed * 0.5
+			velocity.z = strafe.z * move_speed * 0.5
+			_animate_idle(delta)
+		
+		# 攻击判定
+		if distance < preferred_distance + 3.0 and _can_attack:
+			_start_attack()
+	else:
+		velocity.x = move_toward(velocity.x, 0.0, move_speed * delta * 5)
+		velocity.z = move_toward(velocity.z, 0.0, move_speed * delta * 5)
+		_animate_idle(delta)
+	
+	velocity.y = -gravity
+	move_and_slide()
+
+## 走路摆动
+var _walk_time: float = 0.0
+func _animate_walk(delta: float):
+	_walk_time += delta * 7.0
+	if model:
+		model.rotation.x = sin(_walk_time) * 0.06
+		model.position.y = abs(sin(_walk_time)) * 0.04
+
+## 待机浮动
+var _idle_time: float = 0.0
+func _animate_idle(delta: float):
+	_idle_time += delta * 3.0
+	if model:
+		model.rotation.x = lerp(model.rotation.x, 0.0, delta * 5.0)
+		model.position.y = sin(_idle_time) * 0.03
+
+## 发动攻击：抬手 + 连射弹幕
+func _start_attack():
+	_is_attacking = true
+	_can_attack = false
+	attack_timer.start()
+	
+	# 抬手蓄力动画
+	var tween := create_tween()
+	tween.tween_property(model, "rotation:x", deg_to_rad(-15), 0.2)
+	tween.tween_property(model, "position:y", 0.1, 0.2)
+	tween.tween_callback(_fire_burst)
+	tween.tween_property(model, "rotation:x", 0.0, 0.3)
+	tween.tween_property(model, "position:y", 0.0, 0.3)
+	tween.tween_callback(func(): _is_attacking = false)
+
+## 连射
+func _fire_burst():
+	for i in burst_count:
+		_fire_projectile()
+		if i < burst_count - 1:
+			await get_tree().create_timer(burst_interval).timeout
+
+## 发射单个弹幕
+func _fire_projectile():
+	if destroyed or not player:
+		return
+	
+	Audio.play("sounds/enemy_attack.ogg")
+	
+	var projectile_scene = preload("res://objects/projectile.tscn")
+	var projectile_instance = projectile_scene.instantiate()
+	
+	var target_pos := player.global_position + Vector3(0, 0.5, 0)
+	var shoot_origin := shoot_point.global_position if shoot_point else global_position + Vector3(0, 1.0, 0)
+	var shoot_direction := (target_pos - shoot_origin).normalized()
+	
+	# 添加少量散布
+	shoot_direction += Vector3(randf_range(-0.05, 0.05), randf_range(-0.03, 0.03), randf_range(-0.05, 0.05))
+	shoot_direction = shoot_direction.normalized()
+	
+	projectile_instance.direction = shoot_direction
+	projectile_instance.speed = 20.0
+	projectile_instance.damage = attack_damage
+	projectile_instance.max_distance = 35.0
+	projectile_instance.color = Color(0.8, 0.1, 1.0) # 紫色弹幕
+	projectile_instance.shooter = self
+	
+	get_tree().root.add_child(projectile_instance)
+	projectile_instance.global_position = shoot_origin
+
+func _on_attack_cooldown():
+	_can_attack = true
+
+## 受到伤害
+func damage(amount: float):
+	Audio.play("sounds/enemy_hurt.ogg")
+	health -= amount
+	
+	# 受击闪烁
+	if model:
+		var tween := create_tween()
+		model.scale = Vector3(1.1, 0.9, 1.1)
+		tween.tween_property(model, "scale", Vector3.ONE, 0.15)
+	
+	if health <= 0 and not destroyed:
+		destroy()
+
+## 死亡
+func destroy():
+	Audio.play("sounds/enemy_destroy.ogg")
+	destroyed = true
+	
+	# 死亡动画：缩小消失
+	var tween := create_tween()
+	tween.tween_property(model, "scale", Vector3(0.01, 0.01, 0.01), 0.3)
+	tween.tween_property(model, "position:y", -0.5, 0.3)
+	tween.tween_callback(queue_free)

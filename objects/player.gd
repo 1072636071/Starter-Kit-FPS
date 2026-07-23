@@ -35,7 +35,6 @@ var tween: Tween
 signal health_updated
 
 @onready var camera = $Head/Camera
-@onready var raycast = $Head/Camera/RayCast
 @onready var muzzle = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Muzzle
 @onready var container = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Container
 @onready var sound_footsteps = $SoundFootsteps
@@ -52,6 +51,8 @@ func _ready():
 	initiate_change_weapon(weapon_index)
 
 func _process(delta):
+	if not is_inside_tree(): return # 场景重载/节点离树时跳过所有逻辑
+	
 	# Handle functions
 	handle_controls(delta)
 	handle_gravity(delta)
@@ -174,6 +175,7 @@ func action_jump():
 func action_shoot():
 	if Input.is_action_pressed("shoot"):
 		if !blaster_cooldown.is_stopped(): return # Cooldown for shooting
+		if not camera.is_inside_tree(): return # camera 在 SubViewport 中初始化或场景切换时可能离树
 		
 		Audio.play(weapon.sound_shoot)
 		
@@ -190,31 +192,25 @@ func action_shoot():
 		# Shoot the weapon, amount based on shot count
 		
 		for n in weapon.shot_count:
-			raycast.target_position.x = randf_range(-weapon.spread, weapon.spread)
-			raycast.target_position.y = randf_range(-weapon.spread, weapon.spread)
+			# Calculate shoot direction with spread
+			var spread_x = randf_range(-weapon.spread, weapon.spread) * 0.02
+			var spread_y = randf_range(-weapon.spread, weapon.spread) * 0.02
+			var shoot_direction = (camera.global_transform.basis * Vector3(spread_x, spread_y, -1)).normalized()
 			
-			raycast.force_raycast_update()
+			# Spawn projectile
+			var projectile = preload("res://objects/projectile.tscn")
+			var projectile_instance = projectile.instantiate()
 			
-			if !raycast.is_colliding(): continue # Don't create impact when raycast didn't hit
+			projectile_instance.direction = shoot_direction
+			projectile_instance.speed = weapon.projectile_speed
+			projectile_instance.damage = weapon.damage
+			projectile_instance.max_distance = weapon.max_distance
+			projectile_instance.color = weapon.projectile_color
+			projectile_instance.scale = weapon.projectile_size
+			projectile_instance.shooter = self
 			
-			var collider = raycast.get_collider()
-			
-			# Hitting an enemy
-			
-			if collider.has_method("damage"):
-				collider.damage(weapon.damage)
-			
-			# Creating an impact animation
-			
-			var impact = preload("res://objects/impact.tscn")
-			var impact_instance = impact.instantiate()
-			
-			impact_instance.play("shot")
-			
-			get_tree().root.add_child(impact_instance)
-			
-			impact_instance.position = raycast.get_collision_point() + (raycast.get_collision_normal() / 10)
-			impact_instance.look_at(camera.global_transform.origin, Vector3.UP, true)
+			get_tree().root.add_child(projectile_instance)
+			projectile_instance.global_position = camera.global_transform.origin + (camera.global_transform.basis * Vector3(0.15, -0.1, -0.5))
 			
 		var knockback = random_vec2(weapon.min_knockback, weapon.max_knockback)
 		# print('knockback', knockback)
@@ -269,7 +265,6 @@ func change_weapon():
 		
 	# Set weapon data
 	
-	raycast.target_position = Vector3(0, 0, -1) * weapon.max_distance
 	crosshair.texture = weapon.crosshair
 
 func damage(amount):

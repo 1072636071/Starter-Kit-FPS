@@ -14,3 +14,6 @@ spread = 0.5
 knockback = 10
 sound_shoot = "sounds/blaster_repeater.ogg"
 crosshair = ExtResource("1_hoqei")
+projectile_color = Color(0.2, 0.6, 1, 1)
+projectile_size = Vector3(1.2, 1.2, 1.2)
+projectile_speed = 50.0
