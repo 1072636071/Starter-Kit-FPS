@@ -98,7 +98,7 @@ func _build_mesh_library() -> MeshLibrary:
 		mesh_library.create_item(i)
 		mesh_library.set_item_name(i, model_path.get_file().get_basename())
 		mesh_library.set_item_mesh(i, mesh)
-		mesh_library.set_item_mesh_transform(i, Transform3D())
+		mesh_library.set_item_mesh_transform(i, Transform3D().scaled(CELL_SIZE))
 
 		var trimesh_shape := mesh.create_trimesh_shape()
 		if trimesh_shape:
