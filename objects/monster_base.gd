@@ -15,6 +15,11 @@ var _dead := false
 var _can_attack := true
 var _is_attacking := false
 
+# 天空缓降：生成时从高处慢慢落下
+const DROP_HEIGHT := 8.0    # 出生点上方偏移（米）
+const DROP_SPEED := 3.5     # 缓降速度（米/秒）
+var _dropping := true        # 正在缓降中（子类据此跳过 AI）
+
 # issue 03：怪物死亡信号（携带类型标识），由 RunDirector（issue 02）监听做清场检测与奖励结算。
 # 在 destroy() 内、queue_free() 前发射，含延迟 queue_free() 分支（die 动画期间仍发射）。
 signal died(monster_type: StringName)
@@ -33,6 +38,10 @@ func _ready():
 	attack_timer.wait_time = attack_cooldown
 	attack_timer.one_shot = true
 	attack_timer.timeout.connect(_on_attack_cooldown)
+
+	# 天空缓降：从出生点上方慢慢落下
+	position.y += DROP_HEIGHT
+	_dropping = true
 
 	_setup_animation_refs()
 	_setup_locomotion_loops()
@@ -96,13 +105,24 @@ func _face_direction(direction: Vector3) -> void:
 	look_target.y = global_position.y
 	look_at(look_target, Vector3.UP, true)
 
-## 坠落安全网：position.y < -10 时自动 destroy()（与玩家侧阈值一致）。
+## 坠落安全网 + 天空缓降逻辑。
 ## 子类 _physics_process 应调用 super._physics_process(delta) 以激活此检测。
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _dead:
 		return
 	if position.y < -10.0:
 		destroy()
+		return
+	# 缓降阶段：以固定低速下降，落地后切换为正常重力
+	if _dropping:
+		gravity = DROP_SPEED
+		velocity.y = -gravity
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		if is_on_floor():
+			_dropping = false
+			gravity = 0.0
 
 func _on_attack_cooldown():
 	_can_attack = true

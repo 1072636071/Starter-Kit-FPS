@@ -84,6 +84,11 @@ var shield_regen_rate_bonus: float = 0.0
 
 var previously_floored := false
 
+# 天空缓降：生成时从高处慢慢落下
+const DROP_HEIGHT := 10.0   # 出生点上方偏移（米）
+const DROP_SPEED := 4.0     # 缓降速度（米/秒）
+var _dropping := true        # 正在缓降中
+
 var jumps_remaining: int
 
 var container_offset = Vector3(1.2, -1.1, -2.75)
@@ -122,6 +127,10 @@ signal reload_ended(weapon_index: int, cancelled: bool)
 
 func _ready():
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# 天空缓降：从出生点上方慢慢落下
+	position.y += DROP_HEIGHT
+	_dropping = true
 
 	# 护盾初值满（issue 01，ADR 010）
 	shield = shield_max
@@ -346,6 +355,15 @@ func handle_rotation(xRot: float, yRot: float, isController: bool, delta: float 
 # Handle gravity
 
 func handle_gravity(delta):
+	# 缓降阶段：以固定低速下降，不加速
+	if _dropping:
+		gravity = DROP_SPEED
+		if is_on_floor():
+			_dropping = false
+			gravity = 0.0
+			jumps_remaining = number_of_jumps
+		return
+
 	gravity += 20 * delta
 
 	if gravity < 0 and is_on_ceiling():

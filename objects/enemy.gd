@@ -16,13 +16,22 @@ var target_position: Vector3
 # 原 `destroyed` 字段已统一为 `_dead`。
 var _dead := false
 
+# 天空缓降：生成时从高处慢慢落下
+const DROP_HEIGHT := 8.0
+const DROP_SPEED := 3.5
+var _dropping := true
+var _hover_position: Vector3  # 悬停目标位置
+
 # issue 03：怪物死亡信号（携带类型标识），由 RunDirector 监听做清场检测与奖励结算。
 signal died(monster_type: StringName)
 
 # When ready, save the initial position
 
 func _ready():
+	_hover_position = position
+	position.y += DROP_HEIGHT
 	target_position = position
+	_dropping = true
 
 
 func _process(delta):
@@ -32,6 +41,16 @@ func _process(delta):
 		return
 	if _dead:
 		return
+
+	# 缓降阶段：以固定速度下降到悬停位置
+	if _dropping:
+		position.y = move_toward(position.y, _hover_position.y, DROP_SPEED * delta)
+		target_position = position
+		if abs(position.y - _hover_position.y) < 0.1:
+			_dropping = false
+			target_position = _hover_position
+		return
+
 	self.look_at(player.position + Vector3(0, 0.5, 0), Vector3.UP, true)  # Look at player
 	target_position.y += (cos(time * 5) * 1) * delta  # Sine movement (up and down)
 

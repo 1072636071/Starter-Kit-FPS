@@ -63,9 +63,11 @@ func _ready():
 		_current_anim = "holding-right"
 
 func _physics_process(delta):
-	super._physics_process(delta)  # 基类坠落安全网
+	super._physics_process(delta)  # 基类坠落安全网 + 缓降
 	if _dead or not player:
 		return
+	if _dropping:
+		return  # 缓降中不执行 AI
 
 	# 重力
 	gravity += 20.0 * delta
