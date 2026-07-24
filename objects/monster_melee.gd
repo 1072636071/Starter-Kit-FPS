@@ -39,6 +39,7 @@ func _ready():
 			child.layers = 4
 
 func _physics_process(delta):
+	super._physics_process(delta)  # 基类坠落安全网
 	if _dead or not player:
 		return
 

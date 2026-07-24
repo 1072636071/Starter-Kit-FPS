@@ -96,6 +96,14 @@ func _face_direction(direction: Vector3) -> void:
 	look_target.y = global_position.y
 	look_at(look_target, Vector3.UP, true)
 
+## 坠落安全网：position.y < -10 时自动 destroy()（与玩家侧阈值一致）。
+## 子类 _physics_process 应调用 super._physics_process(delta) 以激活此检测。
+func _physics_process(_delta: float) -> void:
+	if _dead:
+		return
+	if position.y < -10.0:
+		destroy()
+
 func _on_attack_cooldown():
 	_can_attack = true
 

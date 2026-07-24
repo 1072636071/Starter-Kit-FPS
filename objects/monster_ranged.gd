@@ -63,6 +63,7 @@ func _ready():
 		_current_anim = "holding-right"
 
 func _physics_process(delta):
+	super._physics_process(delta)  # 基类坠落安全网
 	if _dead or not player:
 		return
 

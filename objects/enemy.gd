@@ -26,6 +26,12 @@ func _ready():
 
 
 func _process(delta):
+	# 坠落安全网：position.y < -10 时自动 destroy()（与玩家侧阈值一致）
+	if not _dead and position.y < -10.0:
+		destroy()
+		return
+	if _dead:
+		return
 	self.look_at(player.position + Vector3(0, 0.5, 0), Vector3.UP, true)  # Look at player
 	target_position.y += (cos(time * 5) * 1) * delta  # Sine movement (up and down)
 
