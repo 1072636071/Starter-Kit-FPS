@@ -36,20 +36,11 @@ func _run_tests() -> void:
 			"Blips script is scripts/minimap.gd (got %s)" % (
 				s.resource_path if s else "null"))
 
-		# 3. Blips.material 是 ShaderMaterial（径向 alpha 裁剪，不覆盖 rgb）
+		# 3. Blips 无 material（圆形裁剪改为代码内 distance 检查，边框/文字不受 shader 影响）
 		var mat := blips.material
-		_check(mat != null and mat is ShaderMaterial,
-			"Blips.material is ShaderMaterial (got %s)" % (
+		_check(mat == null,
+			"Blips.material is null (code-based clipping, got %s)" % (
 				mat.get_class() if mat else "null"))
-		if mat is ShaderMaterial:
-			var shader := (mat as ShaderMaterial).shader
-			_check(shader != null, "Blips ShaderMaterial has a Shader")
-			if shader:
-				# 不应覆盖 rgb（与底图 shader 区分）；应乘 alpha
-				_check(shader.code.find("COLOR.a *= mask") >= 0,
-					"Blips shader multiplies alpha (COLOR.a *= mask)")
-				_check(shader.code.find("smoothstep") >= 0,
-					"Blips shader uses smoothstep for radial falloff")
 
 	# 4. minimap.gd 内部状态：_player 已绑定、_monsters 含 4 个怪
 	if blips:
@@ -116,7 +107,38 @@ func _run_tests() -> void:
 			"melee color differs from ranged color (melee=%s, ranged=%s)" % [
 				str(melee_c), str(ranged_c)])
 
-	# 8. horizontal_forward：默认 rotation.y=0 → 北 (-Z)
+	# 8. 新增视觉参数：边框 + 敌人计数 常量存在
+	_check(blips.BORDER_COLOR != null,
+		"BORDER_COLOR constant exists")
+	_check(blips.BORDER_WIDTH > 0.0,
+		"BORDER_WIDTH > 0 (got %f)" % blips.BORDER_WIDTH)
+	_check(blips.ENEMY_COUNT_FONT_SIZE > 0,
+		"ENEMY_COUNT_FONT_SIZE > 0 (got %d)" % blips.ENEMY_COUNT_FONT_SIZE)
+	# _count_font 在 _ready 中取默认主题字体
+	_check(blips.get("_count_font") != null,
+		"_count_font bound to theme default font")
+
+	# 9. 剩余敌人计数：_monsters 全部有效时 alive_count = 4
+	if blips:
+		var monsters: Array = blips.get("_monsters")
+		var alive := 0
+		for m in monsters:
+			if is_instance_valid(m):
+				alive += 1
+		_check(alive == 4,
+			"alive monster count = 4 (got %d)" % alive)
+		# 模拟一个敌人被释放（死亡），alive_count 应减少
+		var first_monster: Node = monsters[0]
+		first_monster.queue_free()
+		await get_tree().process_frame
+		var alive_after: int = 0
+		for m in blips.get("_monsters"):
+			if is_instance_valid(m):
+				alive_after += 1
+		_check(alive_after == 3,
+			"after freeing 1 monster, alive = 3 (got %d)" % alive_after)
+
+	# 10. horizontal_forward：默认 rotation.y=0 → 北 (-Z)
 	if blips and blips.get("_player"):
 		var p: Node3D = blips.get("_player")
 		# 默认玩家 rotation.y=0，forward 应为 (0,0,-1)
@@ -129,7 +151,7 @@ func _run_tests() -> void:
 		_check(abs(fwd_e.x - 1.0) < 0.001 and abs(fwd_e.z - 0.0) < 0.001,
 			"horizontal_forward(player at yaw=-pi/2) = east +X (got %s)" % str(fwd_e))
 
-	# 9. 主相机与武器相机的 cull_mask 未被改动
+	# 11. 主相机与武器相机的 cull_mask 未被改动
 	var player_main: CharacterBody3D = main.get_node_or_null("Player")
 	if player_main:
 		var main_cam: Camera3D = player_main.get_node_or_null("Head/Camera")

@@ -22,12 +22,24 @@ const MELEE_COLOR := Color(1.0, 0.32, 0.28, 1.0) # 红
 const RANGED_COLOR := Color(1.0, 0.78, 0.25, 1.0) # 暖黄
 const ENEMY_RADIUS := 4.0 # 圆点半径（px）
 
+# 边框视觉参数
+const BORDER_COLOR := Color(1.0, 1.0, 1.0, 0.9) # 白色边框
+const BORDER_WIDTH := 2.0 # 边框线宽（px）
+const BORDER_INSET := 1.0 # 边框相对控件边缘的内缩（px），避免被裁剪
+
+# 敌人计数显示参数
+const ENEMY_COUNT_COLOR := Color(1.0, 1.0, 1.0, 1.0) # 白色文字
+const ENEMY_COUNT_OUTLINE := Color(0, 0, 0, 0.85) # 黑色描边
+const ENEMY_COUNT_FONT_SIZE := 18
+const ENEMY_COUNT_MARGIN := 6.0 # 文字距顶边距离（px）
+
 # 怪物脚本资源路径（用于区分 melee / ranged）
 const MELEE_SCRIPT_PATH := "res://objects/monster_melee.gd"
 const RANGED_SCRIPT_PATH := "res://objects/monster_ranged.gd"
 
 var _player: Node3D = null
 var _monsters: Array = [] # Array[CharacterBody3D]
+var _count_font: Font = null # 敌人计数文字字体（用默认主题字体）
 
 func _ready() -> void:
 	# 玩家：经 "player" group 查找（main.tscn 中 Player 节点 groups=["player"]）
@@ -35,6 +47,8 @@ func _ready() -> void:
 	# 怪物：Monsters 节点的直接子节点（main.tscn 中 Main/Monsters/{MeleeA,...}）
 	# 用延迟一帧查找，确保场景树已完全实例化
 	call_deferred("_refresh_monsters")
+	# 取默认主题字体用于绘制敌人计数
+	_count_font = get_theme_default_font()
 
 func _refresh_monsters() -> void:
 	_monsters.clear()
@@ -74,26 +88,48 @@ func _draw() -> void:
 	if size.x <= 1.0 or size.y <= 1.0:
 		return
 
-	# 1. 玩家箭头
+	var center := Vector2(size.x * 0.5, size.y * 0.5)
+	var radius: float = min(size.x, size.y) * 0.5 - BORDER_INSET
+	var clip_r: float = radius - ENEMY_RADIUS # blip 圆形裁剪半径（留 ENEMY_RADIUS 余量避免硬切）
+
+	# 1. 玩家箭头（圆形裁剪：超出 clip_r 不画）
 	if _player and is_instance_valid(_player):
 		var ppos := _player.global_position
 		var pixel := _world_to_pixel(ppos.x, ppos.z)
-		var fwd := horizontal_forward(_player)
-		if fwd == Vector3.ZERO:
-			# 退化：无法判定朝向（forward 退化为零向量），画一个小圆点占位
-			draw_circle(pixel, PLAYER_ARROW_SIZE * 0.6, PLAYER_COLOR)
-		else:
-			var yaw_rad: float = arrow_yaw_from_forward(fwd)
-			_draw_arrow(pixel, yaw_rad, PLAYER_ARROW_SIZE, PLAYER_COLOR)
+		if pixel.distance_to(center) <= clip_r:
+			var fwd := horizontal_forward(_player)
+			if fwd == Vector3.ZERO:
+				# 退化：无法判定朝向（forward 退化为零向量），画一个小圆点占位
+				draw_circle(pixel, PLAYER_ARROW_SIZE * 0.6, PLAYER_COLOR)
+			else:
+				var yaw_rad: float = arrow_yaw_from_forward(fwd)
+				_draw_arrow(pixel, yaw_rad, PLAYER_ARROW_SIZE, PLAYER_COLOR)
 
-	# 2. 敌人圆点
+	# 2. 敌人圆点（同时统计有效敌人数量；圆形裁剪：超出 clip_r 不画）
+	var alive_count := 0
 	for m in _monsters:
 		if not is_instance_valid(m):
 			continue
+		alive_count += 1
 		var mpos: Vector3 = m.global_position
 		var pixel := _world_to_pixel(mpos.x, mpos.z)
+		if pixel.distance_to(center) > clip_r:
+			continue
 		var color := enemy_color(m)
 		draw_circle(pixel, ENEMY_RADIUS, color)
+
+	# 3. 圆形边框（draw_arc 沿圆周画线，不受 shader 裁剪影响）
+	draw_arc(center, radius, 0.0, TAU, 64, BORDER_COLOR, BORDER_WIDTH)
+
+	# 4. 剩余敌人计数（顶部居中文字）
+	if _count_font:
+		var text := "敌人: %d" % alive_count
+		var text_size := _count_font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, ENEMY_COUNT_FONT_SIZE)
+		var text_pos := Vector2(center.x - text_size.x * 0.5, ENEMY_COUNT_MARGIN + text_size.y)
+		# 黑色描边（先画一圈偏移的黑色再画白色正文，简单 outline）
+		for offs in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
+			_count_font.draw_string(get_canvas_item(), text_pos + offs, text, HORIZONTAL_ALIGNMENT_CENTER, -1, ENEMY_COUNT_FONT_SIZE, ENEMY_COUNT_OUTLINE)
+		_count_font.draw_string(get_canvas_item(), text_pos, text, HORIZONTAL_ALIGNMENT_CENTER, -1, ENEMY_COUNT_FONT_SIZE, ENEMY_COUNT_COLOR)
 
 ## 取玩家水平前向（XZ 平面、归一化）。
 ## forward 退化为零向量时返回 Vector3.ZERO（调用方负责占位渲染）。

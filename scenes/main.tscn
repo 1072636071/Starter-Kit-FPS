@@ -23,6 +23,7 @@ size = Vector3(160, 20, 1)
 size = Vector3(1, 20, 160)
 
 ; T2（minimap）：圆形遮罩 shader——径向 alpha 把方形 SubViewport 渲染裁成圆
+; 调整：底图整体半透明（alpha *= 0.6），让小地图不挡视线
 [sub_resource type="Shader" id="Shader_minimap_circle"]
 code = "shader_type canvas_item;
 
@@ -32,28 +33,16 @@ void fragment() {
 	// 圆内不透明，圆外透明，边缘 0.04 软过渡隐藏俯视渲染四角畸变
 	float alpha = smoothstep(0.5, 0.46, dist);
 	vec4 c = texture(TEXTURE, UV);
-	COLOR = vec4(c.rgb, c.a * alpha);
+	// 整体半透明（0.6），让小地图不挡视线
+	COLOR = vec4(c.rgb, c.a * alpha * 0.6);
 }
 "
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_minimap_circle"]
 shader = SubResource("Shader_minimap_circle")
 
-; T3（minimap）：blip 层圆形裁剪 shader——只对绘制像素的 alpha 做径向衰减，
-; 不覆盖 rgb（与 T2 的底图 shader 区别：底图采样 TEXTURE.rgb；blip 层直接用绘制 COLOR.rgb）
-[sub_resource type="Shader" id="Shader_minimap_blip_clip"]
-code = "shader_type canvas_item;
-
-void fragment() {
-	vec2 center = vec2(0.5, 0.5);
-	float dist = distance(UV, center);
-	float mask = smoothstep(0.5, 0.46, dist);
-	COLOR.a *= mask;
-}
-"
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_minimap_blip_clip"]
-shader = SubResource("Shader_minimap_blip_clip")
+; T3（minimap）：blip 层圆形裁剪已改为代码内 distance 检查（_draw 中跳过圆外 blip），
+; 以便边框与敌人计数文字不受 shader alpha 衰减影响。故 Blips 节点不再挂 ShaderMaterial。
 
 ; T2（minimap）：绑定 T1 产出的 ViewportTexture；viewport_path 相对于场景根（Main）
 [sub_resource type="ViewportTexture" id="ViewportTexture_minimap"]
@@ -123,18 +112,18 @@ label_settings = SubResource("LabelSettings_fpmwk")
 vertical_alignment = 2
 
 ; T2（minimap）：圆形小地图 UI 容器——挂在 HUD（CanvasLayer）下，
-; 锚定右上角（避开左下血条 / 右下弹药列表），180×180px，距屏边 20px。
+; 锚定右上角（避开左下血条 / 右下弹药列表），240×240px，距屏边 20px。
 ; 圆形由子节点 Background 上的 ShaderMaterial 径向 alpha 遮罩实现。
-; 玩家箭头 + 敌人圆点（T3）作为本容器内 Background 的兄弟 2D Control 叠加。
+; 玩家箭头 + 敌人圆点（T3）+ 圆形边框 + 敌人计数 由 minimap.gd 在 Blips 层绘制。
 [node name="Minimap" type="Control" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_left = -200.0
+offset_left = -260.0
 offset_top = 20.0
 offset_right = -20.0
-offset_bottom = 200.0
+offset_bottom = 260.0
 grow_horizontal = 0
 grow_vertical = 2
 mouse_filter = 2
@@ -154,8 +143,8 @@ stretch_mode = 6
 mouse_filter = 2
 
 ; T3（minimap）：blip 叠加层——2D Control，每帧由 scripts/minimap.gd 重绘
-; 玩家箭头（朝向）+ 敌人圆点（melee=红 / ranged=黄）
-; 应用径向 alpha 裁剪 shader，超出圆形区域的 blip 自动隐藏，与底图圆边对齐
+; 玩家箭头（朝向）+ 敌人圆点（melee=红 / ranged=黄）+ 圆形边框 + 剩余敌人计数
+; 圆形裁剪由代码内 distance 检查实现（不挂 shader），边框/文字不受 alpha 衰减影响
 [node name="Blips" type="Control" parent="HUD/Minimap"]
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -163,7 +152,6 @@ offset_right = 0.0
 offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 2
-material = SubResource("ShaderMaterial_minimap_blip_clip")
 mouse_filter = 2
 script = ExtResource("15_minimap")
 
