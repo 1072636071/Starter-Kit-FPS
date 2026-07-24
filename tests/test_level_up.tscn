@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://btestlevelup05"]
+
+[ext_resource type="Script" path="res://tests/test_level_up.gd" id="1_test"]
+
+[node name="TestLevelUp" type="Node3D"]
+script = ExtResource("1_test")

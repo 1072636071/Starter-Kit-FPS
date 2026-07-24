@@ -8,6 +8,16 @@ extends CharacterBody3D
 @export_subgroup("Weapons")
 @export var weapons: Array[Weapon] = []
 
+@export_subgroup("Health & Shield")
+## 最大血量（issue 03 / 05 共用，升级 +20 最大血量受此上限约束）
+@export var max_health: int = 100
+## 护盾最大值（ADR 010）
+@export var shield_max: float = 50.0
+## 最后一次受击后开始回盾的延时（秒）
+@export var shield_regen_delay: float = 3.0
+## 护盾恢复速率（每秒，战斗中亦可恢复）
+@export var shield_regen_rate: float = 10.0
+
 @export_subgroup("Melee")
 @export var melee_damage: float = 40.0
 @export var melee_cooldown: float = 0.5
@@ -55,6 +65,23 @@ var input_mouse: Vector2
 var health: int = 100
 var gravity := 0.0
 
+# 护盾状态（issue 01，ADR 010）
+# shield 当前值（float 因 regen_rate 每帧增量小于 1）
+# _shield_regen_timer：受击后倒计时到 0 才开始回盾；为 0 表示"正在回盾或满盾"
+# _dead：死亡守卫，died 信号只发射一次
+var shield: float = 0.0
+var _shield_regen_timer: float = 0.0
+var _dead := false
+
+# issue 05：升级 bonus 字段（运行时状态，随场景 reload 自然重置）
+# 射击/换弹/移动/护盾/备弹代码读取"有效值" = 基础值 + bonus 或 × multiplier
+# 不修改 Weapon 资源（.tres 全局共享，改会跨局污染）
+var bonus_max_reserve: int = 0
+var damage_multiplier: float = 1.0
+var reload_time_multiplier: float = 1.0
+var move_speed_bonus: float = 0.0
+var shield_regen_rate_bonus: float = 0.0
+
 var previously_floored := false
 
 var jumps_remaining: int
@@ -71,6 +98,10 @@ var is_aiming := false
 var tween: Tween
 
 signal health_updated
+# 护盾变化信号（参数：当前 shield / shield_max），供 HUD 绘制护盾条（issue 07）
+signal shield_updated(shield: float, shield_max: float)
+# 玩家死亡信号（无参数，带 _dead 守卫防重复），由 Game Over UI（issue 06）监听
+signal died
 # 弹药 HUD 信号 —— 由 HUD 监听以渲染右下角列表与进度条
 # magazines/reserves 为当前所有武器的弹药快照（Array[int]）
 signal ammo_updated(weapon_index: int, magazines: Array, reserves: Array)
@@ -91,6 +122,11 @@ signal reload_ended(weapon_index: int, cancelled: bool)
 
 func _ready():
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# 护盾初值满（issue 01，ADR 010）
+	shield = shield_max
+	_shield_regen_timer = 0.0
+	_dead = false
 
 	# 初始化每把枪的弹匣/备弹（满弹匣 + 满备弹）
 	magazine.clear()
@@ -172,6 +208,10 @@ func _process(delta):
 
 	# 换弹计时
 	_step_reload(delta)
+
+	# 护盾延时恢复（issue 01，ADR 010）
+	# Player 为 PROCESS_MODE_PAUSABLE，暂停期间本函数不被调用，regen 自然冻结
+	_step_shield_regen(delta)
 
 	# 近战冷却推进
 	if melee_cooldown_remaining > 0.0:
@@ -259,7 +299,7 @@ func handle_controls(delta):
 		mouse_captured = true
 	var speed_multiplier = ADS_SPEED_FACTOR if is_aiming else 1.0
 	
-	movement_velocity = Vector3(input.x, 0, input.y).normalized() * movement_speed * speed_multiplier
+	movement_velocity = Vector3(input.x, 0, input.y).normalized() * (movement_speed + move_speed_bonus) * speed_multiplier
 	
 	# Handle Controller Rotation
 	var rotation_input := Input.get_vector("camera_right", "camera_left", "camera_down", "camera_up")
@@ -367,7 +407,7 @@ func action_shoot():
 
 			projectile_instance.direction = shoot_direction
 			projectile_instance.speed = weapon.projectile_speed
-			projectile_instance.damage = weapon.damage
+			projectile_instance.damage = weapon.damage * damage_multiplier
 			projectile_instance.max_distance = weapon.max_distance
 			projectile_instance.color = weapon.projectile_color
 			projectile_instance.scale = weapon.projectile_size
@@ -433,7 +473,9 @@ func change_weapon():
 
 	# Set weapon data
 
-	crosshair.texture = weapon.crosshair
+	# crosshair 在独立实例化（非 main.tscn 内）时可能为 null，做防御
+	if crosshair:
+		crosshair.texture = weapon.crosshair
 	_emit_ammo_updated() # 切枪后高亮 + 数值刷新
 
 # === 换弹机制（T4 + T5）===
@@ -452,18 +494,20 @@ func action_reload(index: int) -> void:
 
 	is_reloading = true
 	reload_index = index
-	reload_time_remaining = w.reload_time
+	# issue 05：有效换弹时间 = 基础值 × reload_time_multiplier（升级 -10% 换弹 = ×0.9）
+	var effective_reload_time := w.reload_time * reload_time_multiplier
+	reload_time_remaining = effective_reload_time
 
 	# T5：武器模型换弹动画 —— 移出视野再归位（与切枪动画共享 Tween 机制但不切换模型）
 	if reload_tween and reload_tween.is_valid():
 		reload_tween.kill()
 	reload_tween = get_tree().create_tween()
 	reload_tween.set_ease(Tween.EASE_OUT_IN)
-	reload_tween.tween_property(container, "position", container_offset - Vector3(0, 1, 0), w.reload_time * 0.5)
-	reload_tween.tween_property(container, "position", container_offset, w.reload_time * 0.5)
+	reload_tween.tween_property(container, "position", container_offset - Vector3(0, 1, 0), effective_reload_time * 0.5)
+	reload_tween.tween_property(container, "position", container_offset, effective_reload_time * 0.5)
 
 	if is_inside_tree():
-		reload_started.emit(index, w.reload_time)
+		reload_started.emit(index, effective_reload_time)
 
 # 每帧推进换弹计时；到点完成 reserve → magazine 转移
 func _step_reload(delta: float) -> void:
@@ -581,12 +625,53 @@ func _melee_process_hits() -> void:
 		melee_hit_targets[id] = true
 		body.damage(melee_damage) # 自动触发 HitFeedback.flash，见 ADR 005
 
-func damage(amount):
-	health -= amount
-	health_updated.emit(health) # Update health on HUD
-	
-	if health < 0:
-		get_tree().reload_current_scene() # Reset when out of health
+# === 护盾与血量管线（issue 01，ADR 010）===
+# damage(amount)：先减 shield，溢出才减 health；重置护盾 regen 计时器；
+# health <= 0 触发 died 信号（_dead 守卫防重复），不再裸 reload_current_scene
+# （Game Over UI 由 issue 06 接管）。
+func damage(amount: float) -> void:
+	if _dead:
+		return
+	# 先扣护盾，溢出扣血
+	var overflow := amount - shield
+	shield = maxf(0.0, shield - amount)
+	if overflow > 0.0:
+		# health 为 int，溢出按 int 扣减（amount 通常已是整数）
+		health = max(0, health - int(round(overflow)))
+	# 重置护盾 regen 倒计时（战斗中亦可恢复——只要不再受击超过 delay）
+	_shield_regen_timer = shield_regen_delay
+	# 广播护盾/血量变化
+	shield_updated.emit(shield, shield_max)
+	health_updated.emit(health)
+	# 死亡判定：原 health < 0 改为 <= 0，避免 0 血不死
+	if health <= 0 and not _dead:
+		_dead = true
+		died.emit()
+
+# 护盾延时恢复：受击后倒计时 delay，到点每帧按 rate 回盾（不超过 max）
+# 在 _process 中调用；Player 为 PAUSABLE，暂停期间自然冻结
+func _step_shield_regen(delta: float) -> void:
+	if _dead:
+		return
+	if shield >= shield_max:
+		return
+	if _shield_regen_timer > 0.0:
+		_shield_regen_timer = maxf(0.0, _shield_regen_timer - delta)
+		return
+	shield = minf(shield_max, shield + (shield_regen_rate + shield_regen_rate_bonus) * delta)
+	shield_updated.emit(shield, shield_max)
+
+# 治疗方法（issue 03 共用）：加血不超过 max_health，不影响护盾，不发 damage 管线
+func heal(amount: int) -> void:
+	if _dead:
+		return
+	health = min(health + amount, max_health)
+	health_updated.emit(health)
+
+# issue 05：有效备弹上限 = weapon.max_reserve + bonus_max_reserve（不改 Weapon 资源）
+# 供 issue 04 商店购买上限检查、issue 08 宝箱备弹补给回满使用
+func effective_max_reserve(weapon: Weapon) -> int:
+	return weapon.max_reserve + bonus_max_reserve
 
 # Create a random knockback vector
 static func random_vec2(_min: Vector2, _max: Vector2) -> Vector2:

@@ -15,6 +15,10 @@ var _dead := false
 var _can_attack := true
 var _is_attacking := false
 
+# issue 03：怪物死亡信号（携带类型标识），由 RunDirector（issue 02）监听做清场检测与奖励结算。
+# 在 destroy() 内、queue_free() 前发射，含延迟 queue_free() 分支（die 动画期间仍发射）。
+signal died(monster_type: StringName)
+
 # 骨骼动画引用（T1/T2/T4/T5 共用）
 var character_model: Node3D
 var anim_player: AnimationPlayer
@@ -112,11 +116,20 @@ func damage(amount: float):
 	if health <= 0 and not _dead:
 		destroy()
 
+## issue 03：返回本怪物的硬编码类型标识（默认空，子类覆盖）。
+## 用虚方法而非直接读 const：GDScript const 在基类方法中按词法作用域静态绑定到基类，
+## 子类 shadow 的同名 const 不会被基类 destroy() 看到；虚方法走动态分派可正确取到子类值。
+func _monster_type() -> StringName:
+	return &""
+
 ## T5: 死亡——播 die 骨骼剪辑，播完 queue_free。
 ## _dead 标志使 _physics_process 提前返回，避免与 die 剪辑抢动画轨道。
+## issue 03：在 _dead 置位后、queue_free() 前发射 died(monster_type)，
+## 确保 die 动画期间的延迟 queue_free() 分支也能让 RunDirector 收到信号并正确减 alive_count。
 func destroy():
 	Audio.play("sounds/enemy_destroy.ogg")
 	_dead = true
+	died.emit(_monster_type())
 	if anim_player and anim_player.has_animation("die"):
 		anim_player.play("die")
 		# 用实际剪辑时长驱动 queue_free，不硬编码

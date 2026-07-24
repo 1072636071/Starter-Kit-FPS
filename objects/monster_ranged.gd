@@ -4,16 +4,12 @@ extends "res://objects/monster_base.gd"
 ## T4/T5 骨骼移动/待机/死亡动画已在基类实现
 
 const CombatUtils = preload("res://scripts/combat_utils.gd")
+const MONSTER_TYPE: StringName = &"monster_ranged"
 
-@export var move_speed: float = 2.5
-@export var chase_range: float = 30.0
 @export var preferred_distance: float = 10.0
 @export var too_close_distance: float = 5.0
-@export var attack_damage: float = 8.0
-@export var attack_cooldown: float = 1.8
 @export var burst_count: int = 3
 @export var burst_interval: float = 0.15
-@export var health: float = 80.0
 @export var enemy_spread: float = 0.08
 ## 枪模型（默认 blaster.glb）；留空则不挂枪
 @export var gun_model: PackedScene = preload("res://models/weapons/blaster.glb")
@@ -23,7 +19,17 @@ const CombatUtils = preload("res://scripts/combat_utils.gd")
 var muzzle: Marker3D
 var gun_instance: Node3D
 
+## issue 03：返回本怪物的硬编码类型标识（RunDirector 监听 died 信号做奖励结算）
+func _monster_type() -> StringName:
+	return MONSTER_TYPE
+
 func _ready():
+	# 覆盖基类默认值（远程特化）—— 不重复 @export（基类已声明，避免 parse error）
+	move_speed = 2.5
+	chase_range = 30.0
+	attack_damage = 8.0
+	attack_cooldown = 1.8
+	health = 80.0
 	super._ready()
 
 	# T1: 挂枪模型 + 枪口 Marker3D + 常驻持枪姿态

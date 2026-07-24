@@ -11,6 +11,9 @@
 [ext_resource type="PackedScene" uid="uid://blevelup05card" path="res://scenes/level_up.tscn" id="17_levelup"]
 [ext_resource type="PackedScene" uid="uid://bshopstation04" path="res://scenes/shop.tscn" id="18_shop"]
 [ext_resource type="PackedScene" uid="uid://bshopui04ctrl" path="res://scenes/shop_ui.tscn" id="19_shopui"]
+[ext_resource type="PackedScene" uid="uid://bgameover06ui" path="res://scenes/game_over.tscn" id="20_gameover"]
+[ext_resource type="PackedScene" uid="uid://bchestui08ctrl" path="res://scenes/chest_ui.tscn" id="21_chestui"]
+[ext_resource type="PackedScene" uid="uid://bchest08scene" path="res://scenes/chest.tscn" id="22_chest"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_fpmwk"]
 font = ExtResource("3_w27de")
@@ -84,7 +87,7 @@ transform = Transform3D(-0.422618, -0.694272, 0.582563, 0, 0.642788, 0.766044, -
 shadow_enabled = true
 shadow_opacity = 0.75
 
-[node name="HUD" type="CanvasLayer" parent="." unique_id=1419663090]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1419663090 groups=["hud"]]
 script = ExtResource("3_s8mkj")
 
 [node name="Crosshair" type="TextureRect" parent="HUD" unique_id=288362464]
@@ -167,6 +170,16 @@ visible = false
 [node name="ShopUI" parent="HUD" instance=ExtResource("19_shopui")]
 visible = false
 
+; issue 06：游戏结束界面——挂在 HUD 下，process_mode=WHEN_PAUSED（暂停期间可点击）
+; 监听 RunDirector.game_over(stats) 显示战绩 + “重开一局”按钮
+[node name="GameOver" parent="HUD" instance=ExtResource("20_gameover")]
+visible = false
+
+; issue 08：宝箱 3 选 1 UI——挂在 HUD 下，process_mode=WHEN_PAUSED（暂停期间可点击）
+; 由 chest.gd 调用 open(choices, chest_ref) 显示；玩家选 1 → apply → 隐藏
+[node name="ChestUI" parent="HUD" instance=ExtResource("21_chestui")]
+visible = false
+
 [node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
 script = ExtResource("14_nav")
 
@@ -232,6 +245,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.5, -40)
 ; _ready() 自动收集 SpawnPoints 与 Monsters；监听 player.died → game_over。
 [node name="RunDirector" type="Node" parent="." groups=["run_director"]]
 script = ExtResource("16_director")
+chest_scene = ExtResource("22_chest")
 
 ; issue 04：子弹商店摊位——固定物理位置（竞技场东南角，避开出生点 SP5=40,40）。
 ; Area3D 触发区（3×3×3）+ 发光柱可视化（layer 1，主相机 + 小地图皆可见作地标）。
@@ -241,3 +255,4 @@ script = ExtResource("16_director")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 1.5, 60)
 
 [connection signal="health_updated" from="Player" to="HUD" method="_on_health_updated"]
+[connection signal="shield_updated" from="Player" to="HUD" method="_on_shield_updated"]

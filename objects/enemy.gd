@@ -1,6 +1,7 @@
 extends Node3D
 
 const CombatUtils = preload("res://scripts/combat_utils.gd")
+const MONSTER_TYPE: StringName = &"enemy"
 
 @export var player: Node3D
 @export var enemy_spread: float = 0.08
@@ -11,7 +12,12 @@ const CombatUtils = preload("res://scripts/combat_utils.gd")
 var health := 100
 var time := 0.0
 var target_position: Vector3
-var destroyed := false
+# issue 03：死亡守卫（与 melee/ranged 一致），防止 destroy() 重入。
+# 原 `destroyed` 字段已统一为 `_dead`。
+var _dead := false
+
+# issue 03：怪物死亡信号（携带类型标识），由 RunDirector 监听做清场检测与奖励结算。
+signal died(monster_type: StringName)
 
 # When ready, save the initial position
 
@@ -35,15 +41,19 @@ func damage(amount):
 
 	health -= amount
 
-	if health <= 0 and !destroyed:
+	if health <= 0 and not _dead:
 		destroy()
 
 # Destroy the enemy when out of health
+# issue 03：发射 died(monster_type) 后再 queue_free，_dead 守卫防重入。
 
 func destroy():
+	if _dead:
+		return
 	Audio.play("sounds/enemy_destroy.ogg")
 
-	destroyed = true
+	_dead = true
+	died.emit(MONSTER_TYPE)
 	queue_free()
 
 # Shoot when timer hits 0

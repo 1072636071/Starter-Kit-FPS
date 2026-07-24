@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://blevelup05card"]
+
+[ext_resource type="Script" path="res://scripts/level_up.gd" id="1_levelup"]
+
+[node name="LevelUp" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_levelup")

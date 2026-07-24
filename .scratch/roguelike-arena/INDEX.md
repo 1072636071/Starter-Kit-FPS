@@ -12,9 +12,9 @@
 | resolved | [03-kill-rewards.md](./issues/03-kill-rewards.md) | 击杀奖励 + 血包实体 + monster_type | 015, Q7 |
 | resolved | [04-bullet-shop-station.md](./issues/04-bullet-shop-station.md) | 子弹商店摊位 + 购买 UX | 012, 013, 015 |
 | resolved | [05-level-up-cards.md](./issues/05-level-up-cards.md) | 升级三选一卡 + 叠加语义 + bonus 字段 | 011, 015, Q5, Q10 |
-| ready-for-agent | [06-game-over-screen.md](./issues/06-game-over-screen.md) | 游戏结束界面 + 重开机制 | 014, 015 |
-| ready-for-agent | [07-hud-integration.md](./issues/07-hud-integration.md) | HUD 集成 + 暂停刷新 | 015 |
-| ready-for-agent | [08-chest.md](./issues/08-chest.md) | 清场宝箱（元气骑士式） | 015 |
+| resolved | [06-game-over-screen.md](./issues/06-game-over-screen.md) | 游戏结束界面 + 重开机制 | 014, 015 |
+| resolved | [07-hud-integration.md](./issues/07-hud-integration.md) | HUD 集成 + 暂停刷新 | 015 |
+| resolved | [08-chest.md](./issues/08-chest.md) | 清场宝箱（元气骑士式） | 015 |
 
 ## 跨 issue 关键约定（grill 补充）
 

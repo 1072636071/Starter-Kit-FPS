@@ -1,6 +1,6 @@
 # 08 — 清场宝箱（Chest）
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Refs: PRD.md, ADR 015, CONTEXT.md「Chest / Chest Reward」, issue 02 / 03 / 07
 

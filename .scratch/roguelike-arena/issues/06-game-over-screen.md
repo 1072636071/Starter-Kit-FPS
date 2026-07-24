@@ -1,6 +1,6 @@
 # 06 — 游戏结束界面
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Refs: PRD.md, ADR 014, ADR 015, CONTEXT.md「Game Over / Arena Run / Pause Semantics」
 

@@ -3,12 +3,9 @@ extends "res://objects/monster_base.gd"
 ## T2: 持剑/空手 + attack-melee-right 骨骼剪辑 + 活跃帧伤害结算
 ## T4/T5 骨骼移动/待机/死亡动画已在基类实现
 
-@export var move_speed: float = 3.5
-@export var chase_range: float = 25.0
+const MONSTER_TYPE: StringName = &"monster_melee"
+
 @export var attack_range: float = 2.0
-@export var attack_damage: float = 15.0
-@export var attack_cooldown: float = 1.2
-@export var health: float = 120.0
 ## 近战武器模型（默认 Mistsplitter.glb，与玩家 Sword6.glb 不同）；留空则空手
 @export var melee_weapon_model: PackedScene = preload("res://models/melee_weapons/Mistsplitter.glb")
 ## attack-melee-right 活跃帧时刻（约 0.2s，按剪辑实际时长微调）
@@ -16,7 +13,17 @@ extends "res://objects/monster_base.gd"
 
 var weapon_instance: Node3D
 
+## issue 03：返回本怪物的硬编码类型标识（RunDirector 监听 died 信号做奖励结算）
+func _monster_type() -> StringName:
+	return MONSTER_TYPE
+
 func _ready():
+	# 覆盖基类默认值（近战特化）
+	move_speed = 3.5
+	chase_range = 25.0
+	attack_damage = 15.0
+	attack_cooldown = 1.2
+	health = 120.0
 	super._ready()
 
 	# T2: 挂近战武器模型（melee_weapon_model = null 即空手变体）

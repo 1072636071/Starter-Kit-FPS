@@ -1,6 +1,6 @@
 # 03 — 击杀奖励（金币 / 经验 / 血包）
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Refs: PRD.md, ADR 015, CONTEXT.md「Kill Reward / Health Pack / Gold / XP / monster_type」, Q7
 
@@ -47,3 +47,23 @@ Refs: PRD.md, ADR 015, CONTEXT.md「Kill Reward / Health Pack / Gold / XP / mons
 - `monster_type` 取值与脚本/场景基名一致（`&"monster_melee"` 等），便于 grep 与 RunDirector 查表。
 - 血包 `heal_amount = 25` 是初值，平衡阶段可调；不与护盾恢复冲突（血包只加 `health`）。
 - 血包过期机制防止场上堆积；15s 是占位，可调。
+
+## 答案
+
+已实现，TDD 测试 [tests/test_monster_died_signal.gd](file:///g:/work/Starter-Kit-FPS/tests/test_monster_died_signal.gd)（14 项断言）+ [tests/test_health_pack.gd](file:///g:/work/Starter-Kit-FPS/tests/test_health_pack.gd)（7 项断言）全绿。
+
+实现要点：
+- **died 信号 & monster_type**：
+  - [monster_base.gd:20,122-123](file:///g:/work/Starter-Kit-FPS/objects/monster_base.gd#L20-L123) — `signal died(monster_type: StringName)` + 虚方法 `_monster_type()`（动态分派，避免 const 词法作用域静态绑定基类问题）。
+  - [monster_base.gd:129-138](file:///g:/work/Starter-Kit-FPS/objects/monster_base.gd#L129-L138) — `destroy()`：`_dead = true` → `died.emit(_monster_type())` → 播 die 动画 + 延迟 queue_free（或立即 queue_free）。
+  - [monster_melee.gd:6,17-18](file:///g:/work/Starter-Kit-FPS/objects/monster_melee.gd#L6-L18) — `const MONSTER_TYPE = &"monster_melee"` + override。
+  - [monster_ranged.gd:7,23-24](file:///g:/work/Starter-Kit-FPS/objects/monster_ranged.gd#L7-L24) — `const MONSTER_TYPE = &"monster_ranged"` + override。
+  - [enemy.gd:4,20,50-57](file:///g:/work/Starter-Kit-FPS/objects/enemy.gd#L4-L57) — `const MONSTER_TYPE = &"enemy"` + `signal died` + `destroy()` 发射 died + `_dead` 守卫防重入（原 enemy 无 _dead，补齐与 melee/ranged 一致）。
+- **奖励结算**（[run_director.gd:218-238](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd#L218-L238)）：`_on_monster_died(monster_type, monster)` 查表 `REWARD_MELEE=5 / REWARD_RANGED=8 / REWARD_ENEMY=10` → `add_gold` + `add_xp` + `add_kills`（gold/xp 同值，不随波缩放）。
+- **血包掉落**（[run_director.gd:277-305](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd#L277-L305)）：`rng.randf() < health_pack_drop_chance (0.10)`；死亡位置 y>1 时 RayCast 向下投影到地面；同位置 2m 内已有血包则跳过（不堆叠）。
+- **Health Pack 实体**（[scripts/health_pack.gd](file:///g:/work/Starter-Kit-FPS/scripts/health_pack.gd) + [scenes/health_pack.tscn](file:///g:/work/Starter-Kit-FPS/scenes/health_pack.tscn)）：`Area3D` + `body_entered` 检测 player 组 → `player.heal(heal_amount)`；`despawn_time=15s` 后 queue_free；`@export heal_amount=25`；`PROCESS_MODE_PAUSABLE`。
+- **Player.heal**（[player.gd:654-658](file:///g:/work/Starter-Kit-FPS/objects/player.gd#L654-L658)）：`health = min(health + amount, max_health)`，`_dead` 时 no-op，发 `health_updated`。
+
+测试：
+- `godot --headless res://tests/test_monster_died_signal.tscn --quit-after 600` → `[TEST] PASS`（三怪 MONSTER_TYPE 常量、died 信号、致死单次发射、类型携带、_dead 守卫防重入）。
+- `godot --headless res://tests/test_health_pack.tscn --quit-after 600` → `[TEST] PASS`（heal_amount/despawn_time 默认值、拾取回血+queue_free、非玩家 body 忽略、过期自动消失）。
