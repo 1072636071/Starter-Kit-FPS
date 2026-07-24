@@ -21,3 +21,4 @@ display_name = "连发枪"
 magazine_size = 24
 max_reserve = 96
 reload_time = 1.2
+gold_cost_per_bullet = 2

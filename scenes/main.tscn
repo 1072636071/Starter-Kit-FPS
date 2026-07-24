@@ -5,10 +5,12 @@
 [ext_resource type="Script" uid="uid://by0qn28x1i1jj" path="res://scripts/hud.gd" id="3_s8mkj"]
 [ext_resource type="FontFile" uid="uid://biqtga8moh7ah" path="res://fonts/lilita_one_regular.ttf" id="3_w27de"]
 [ext_resource type="PackedScene" path="res://scenes/city-level.tscn" id="11_city"]
-[ext_resource type="PackedScene" path="res://objects/monster_melee.tscn" id="12_melee"]
-[ext_resource type="PackedScene" path="res://objects/monster_ranged.tscn" id="13_ranged"]
 [ext_resource type="Script" path="res://scripts/nav_region.gd" id="14_nav"]
 [ext_resource type="Script" path="res://scripts/minimap.gd" id="15_minimap"]
+[ext_resource type="Script" path="res://scripts/run_director.gd" id="16_director"]
+[ext_resource type="PackedScene" uid="uid://blevelup05card" path="res://scenes/level_up.tscn" id="17_levelup"]
+[ext_resource type="PackedScene" uid="uid://bshopstation04" path="res://scenes/shop.tscn" id="18_shop"]
+[ext_resource type="PackedScene" uid="uid://bshopui04ctrl" path="res://scenes/shop_ui.tscn" id="19_shopui"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_fpmwk"]
 font = ExtResource("3_w27de")
@@ -155,6 +157,16 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("15_minimap")
 
+; issue 05：升级三选一 UI——挂在 HUD 下，process_mode=WHEN_PAUSED（暂停期间可点击）
+; 监听 RunDirector.level_up_offered(choices) 显示三卡；玩家选 1 → apply_upgrade → 隐藏
+[node name="LevelUp" parent="HUD" instance=ExtResource("17_levelup")]
+visible = false
+
+; issue 04：子弹商店购买 UI——挂在 HUD 下，process_mode=WHEN_PAUSED（暂停期间可点击）
+; 由 ShopStation（Area3D）在玩家走入触发区时调用 open() 显示；ESC/关闭按钮/走出 关闭
+[node name="ShopUI" parent="HUD" instance=ExtResource("19_shopui")]
+visible = false
+
 [node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
 script = ExtResource("14_nav")
 
@@ -188,16 +200,44 @@ shape = SubResource("BoxShape3D_wall_side")
 
 [node name="Monsters" type="Node3D" parent="."]
 
-[node name="MeleeA" parent="Monsters" instance=ExtResource("12_melee")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.5, -10)
+; issue 02：出生点——沿竞技场四周布置 8 个 Marker3D（避开玩家出生点 origin 与未来商店摊位）。
+; 怪物在 Marker3D.global_position 处 instantiate 加入 Monsters；需求 > 出生点数时循环+±2m 抖动。
+[node name="SpawnPoints" type="Node3D" parent="."]
 
-[node name="MeleeB" parent="Monsters" instance=ExtResource("12_melee")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.5, 6)
+[node name="SP1" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 0.5, 0)
 
-[node name="RangedA" parent="Monsters" instance=ExtResource("13_ranged")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15, 0.5, 8)
+[node name="SP2" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -50, 0.5, 0)
 
-[node name="RangedB" parent="Monsters" instance=ExtResource("13_ranged")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0.5, -15)
+[node name="SP3" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 50)
+
+[node name="SP4" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, -50)
+
+[node name="SP5" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.5, 40)
+
+[node name="SP6" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.5, 40)
+
+[node name="SP7" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.5, -40)
+
+[node name="SP8" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.5, -40)
+
+; issue 02：RunDirector——竞技场运行编排器，挂在 Main 下（Monsters 的兄弟节点）。
+; _ready() 自动收集 SpawnPoints 与 Monsters；监听 player.died → game_over。
+[node name="RunDirector" type="Node" parent="." groups=["run_director"]]
+script = ExtResource("16_director")
+
+; issue 04：子弹商店摊位——固定物理位置（竞技场东南角，避开出生点 SP5=40,40）。
+; Area3D 触发区（3×3×3）+ 发光柱可视化（layer 1，主相机 + 小地图皆可见作地标）。
+; 玩家走入 → body_entered → 暂停 + 打开 HUD/ShopUI；ESC/关闭/走出 → 恢复。
+; ShopStation._ready() 通过 group "shop_ui" 查找 HUD/ShopUI、group "run_director" 查找 RunDirector。
+[node name="ShopStation" parent="." instance=ExtResource("18_shop")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 1.5, 60)
 
 [connection signal="health_updated" from="Player" to="HUD" method="_on_health_updated"]

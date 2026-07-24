@@ -24,3 +24,4 @@ display_name = "爆能枪"
 magazine_size = 8
 max_reserve = 40
 reload_time = 1.5
+gold_cost_per_bullet = 1
