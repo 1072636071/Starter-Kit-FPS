@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/city-level.tscn" id="11_city"]
 [ext_resource type="PackedScene" path="res://objects/monster_melee.tscn" id="12_melee"]
 [ext_resource type="PackedScene" path="res://objects/monster_ranged.tscn" id="13_ranged"]
+[ext_resource type="Script" path="res://scripts/nav_region.gd" id="14_nav"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_fpmwk"]
 font = ExtResource("3_w27de")
@@ -62,32 +63,35 @@ text = "100%"
 label_settings = SubResource("LabelSettings_fpmwk")
 vertical_alignment = 2
 
-[node name="CityLevel" parent="." instance=ExtResource("11_city")]
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+script = ExtResource("14_nav")
 
-[node name="Boundaries" type="Node" parent="."]
+[node name="CityLevel" parent="NavigationRegion3D" instance=ExtResource("11_city")]
 
-[node name="WallNorth" type="StaticBody3D" parent="Boundaries"]
+[node name="Boundaries" type="Node" parent="NavigationRegion3D"]
+
+[node name="WallNorth" type="StaticBody3D" parent="NavigationRegion3D/Boundaries"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10, -80)
 
-[node name="Collision" type="CollisionShape3D" parent="Boundaries/WallNorth"]
+[node name="Collision" type="CollisionShape3D" parent="NavigationRegion3D/Boundaries/WallNorth"]
 shape = SubResource("BoxShape3D_wall")
 
-[node name="WallSouth" type="StaticBody3D" parent="Boundaries"]
+[node name="WallSouth" type="StaticBody3D" parent="NavigationRegion3D/Boundaries"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10, 80)
 
-[node name="Collision" type="CollisionShape3D" parent="Boundaries/WallSouth"]
+[node name="Collision" type="CollisionShape3D" parent="NavigationRegion3D/Boundaries/WallSouth"]
 shape = SubResource("BoxShape3D_wall")
 
-[node name="WallEast" type="StaticBody3D" parent="Boundaries"]
+[node name="WallEast" type="StaticBody3D" parent="NavigationRegion3D/Boundaries"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 10, 0)
 
-[node name="Collision" type="CollisionShape3D" parent="Boundaries/WallEast"]
+[node name="Collision" type="CollisionShape3D" parent="NavigationRegion3D/Boundaries/WallEast"]
 shape = SubResource("BoxShape3D_wall_side")
 
-[node name="WallWest" type="StaticBody3D" parent="Boundaries"]
+[node name="WallWest" type="StaticBody3D" parent="NavigationRegion3D/Boundaries"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 10, 0)
 
-[node name="Collision" type="CollisionShape3D" parent="Boundaries/WallWest"]
+[node name="Collision" type="CollisionShape3D" parent="NavigationRegion3D/Boundaries/WallWest"]
 shape = SubResource("BoxShape3D_wall_side")
 
 [node name="Monsters" type="Node3D" parent="."]

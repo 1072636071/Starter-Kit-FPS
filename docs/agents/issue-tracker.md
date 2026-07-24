@@ -2,17 +2,25 @@
 
 此仓库的 issue 和 PRD 以 markdown 文件形式存放在 `.scratch/` 中。
 
-## 约定
+## 写作目录（Tracker 落在哪里）
+
+**所有 tracker 文件都写在 `.scratch/` 下，绝不在仓库根目录。**
 
 - 每个功能一个目录：`.scratch/<feature-slug>/`
-- PRD 是 `.scratch/<feature-slug>/PRD.md`
-- 实现 issue 是 `.scratch/<feature-slug>/issues/<NN>-<slug>.md`，从 `01` 编号
+- PRD：`.scratch/<feature-slug>/PRD.md`
+- 实现 issue：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`，从 `01` 编号
+- 跨功能的索引文件：`.scratch/tickets.md`（仅作索引，不承载实际工单内容）
+
+> **重要：避免使用仓库根的 `tickets.md`。** `jxx-to-tickets` 技能在"本地文件"模式下默认把工单写到仓库根的 `tickets.md`。那是技能的通用默认落点，**不是本仓库的约定**。使用 `/jxx-to-tickets` 时，发布阶段必须写到 `.scratch/<feature-slug>/`（issue 文件或按需的 `tickets.md` 索引），不要写（或保留）根目录的 `tickets.md`。
+
+## 约定
+
 - Triage 状态记录为每个 issue 文件顶部附近的 `Status:` 行（角色字符串见 `triage-labels.md`）
 - 评论和对话历史追加到文件底部，在 `## 评论` 标题下
 
 ## 当技能说"发布到 issue tracker"时
 
-在 `.scratch/<feature-slug>/` 下创建新文件（如需要则创建目录）。
+在 `.scratch/<feature-slug>/` 下创建新文件（如需要则创建目录）。不要写到仓库根目录的 `tickets.md`。
 
 ## 当技能说"获取相关工单"时
 

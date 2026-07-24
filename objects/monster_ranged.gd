@@ -1,6 +1,8 @@
 extends CharacterBody3D
 ## 远程怪物：与玩家保持距离，发射弹幕攻击
 
+const CombatUtils = preload("res://scripts/combat_utils.gd")
+
 @export var player: Node3D
 @export var move_speed: float = 2.5
 @export var chase_range: float = 30.0
@@ -11,6 +13,7 @@ extends CharacterBody3D
 @export var burst_count: int = 3
 @export var burst_interval: float = 0.15
 @export var health: float = 80.0
+@export var enemy_spread: float = 0.08
 
 var gravity: float = 0.0
 var destroyed := false
@@ -20,6 +23,7 @@ var _is_attacking := false
 @onready var model: Node3D = $Model
 @onready var attack_timer: Timer = $AttackTimer
 @onready var shoot_point: Marker3D = $ShootPoint
+@onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready():
 	attack_timer.wait_time = attack_cooldown
@@ -48,27 +52,34 @@ func _physics_process(delta):
 	var distance := to_player.length()
 	
 	# 面向玩家
-	if distance > 0.1:
-		var look_target := global_position + to_player.normalized()
-		look_target.y = global_position.y
-		look_at(look_target, Vector3.UP, true)
+	_face_direction(to_player)
+	
+	# 通过 NavMesh 寻路获取朝玩家的路径方向（可绕墙、跨过 ≤ step_height 的台阶）
+	nav_agent.target_position = player.global_position
+	var path_dir := Vector3.ZERO
+	if not nav_agent.is_navigation_finished():
+		var to_next := nav_agent.get_next_path_position() - global_position
+		to_next.y = 0.0
+		if to_next.length() > 0.1:
+			path_dir = to_next.normalized()
 	
 	# 移动逻辑：保持理想距离
 	if distance < chase_range and not _is_attacking:
-		var direction := to_player.normalized()
+		# 三种行为均沿 NavMesh 路径方向，避免台阶/墙边卡死（path_dir 不可用时回退到直线）
+		var path_base := path_dir if path_dir != Vector3.ZERO else to_player.normalized()
 		if distance < too_close_distance:
-			# 太近了，后退
-			velocity.x = -direction.x * move_speed
-			velocity.z = -direction.z * move_speed
+			# 太近了，后退（沿可行走路径反向远离玩家）
+			velocity.x = -path_base.x * move_speed
+			velocity.z = -path_base.z * move_speed
 			_animate_walk(delta)
 		elif distance > preferred_distance + 2.0:
-			# 太远了，靠近
-			velocity.x = direction.x * move_speed
-			velocity.z = direction.z * move_speed
+			# 太远了，靠近（沿 NavMesh 路径，绕过墙体、跨过台阶）
+			velocity.x = path_base.x * move_speed
+			velocity.z = path_base.z * move_speed
 			_animate_walk(delta)
 		else:
-			# 在理想距离，横向游走
-			var strafe := direction.cross(Vector3.UP)
+			# 在理想距离，横向游走（沿可行走路径横向）
+			var strafe := path_base.cross(Vector3.UP)
 			velocity.x = strafe.x * move_speed * 0.5
 			velocity.z = strafe.z * move_speed * 0.5
 			_animate_idle(delta)
@@ -83,6 +94,14 @@ func _physics_process(delta):
 	
 	velocity.y = -gravity
 	move_and_slide()
+
+## 朝指定水平方向 look（不影响 y）
+func _face_direction(direction: Vector3) -> void:
+	if direction.length_squared() <= 0.01:
+		return
+	var look_target := global_position + direction.normalized()
+	look_target.y = global_position.y
+	look_at(look_target, Vector3.UP, true)
 
 ## 走路摆动
 var _walk_time: float = 0.0
@@ -136,9 +155,8 @@ func _fire_projectile():
 	var shoot_origin := shoot_point.global_position if shoot_point else global_position + Vector3(0, 1.0, 0)
 	var shoot_direction := (target_pos - shoot_origin).normalized()
 	
-	# 添加少量散布
-	shoot_direction += Vector3(randf_range(-0.05, 0.05), randf_range(-0.03, 0.03), randf_range(-0.05, 0.05))
-	shoot_direction = shoot_direction.normalized()
+	# Add spread with distance scaling
+	shoot_direction = CombatUtils.apply_enemy_spread(shoot_direction, enemy_spread, shoot_origin.distance_to(target_pos))
 	
 	projectile_instance.direction = shoot_direction
 	projectile_instance.speed = 20.0
@@ -156,14 +174,15 @@ func _on_attack_cooldown():
 ## 受到伤害
 func damage(amount: float):
 	Audio.play("sounds/enemy_hurt.ogg")
+	HitFeedback.flash(self)
 	health -= amount
-	
+
 	# 受击闪烁
 	if model:
 		var tween := create_tween()
 		model.scale = Vector3(1.1, 0.9, 1.1)
 		tween.tween_property(model, "scale", Vector3.ONE, 0.15)
-	
+
 	if health <= 0 and not destroyed:
 		destroy()
 

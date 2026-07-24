@@ -1,0 +1,23 @@
+# 工单索引（Tracker 根）
+
+本仓库所有 issue / 工单统一存放在 `.scratch/` 下，按功能分目录。本文件是索引，替代原先仓库**根目录**的 `tickets.md`。
+
+> 根目录 `tickets.md` 只是 `jxx-to-tickets` 技能的**默认落点**，并非本仓库约定。详见 `docs/agents/issue-tracker.md`「写作目录」一节。
+
+## 写作目录规则
+
+- 每个功能一个目录：`.scratch/<feature-slug>/`
+- PRD：`.scratch/<feature-slug>/PRD.md`
+- 实现 issue：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`，从 `01` 编号
+- 本 `tickets.md` 仅作索引，实际工单在上面的 `issues/` 目录内
+
+## 功能列表
+
+| 功能 | 目录 |
+|------|------|
+| 弹药 HUD 系统 | `.scratch/ammo-hud/`（PRD.md + issues/） |
+| 城市地图管线 | `.scratch/city-editor/`（issues/） |
+| 受击反馈 Hit Flash | `.scratch/hit-feedback/`（issues/） |
+| 玩家近战系统 | `.scratch/melee/`（PRD.md + issues/） |
+
+按**前沿**推进：任何阻塞者全部完成的工单。Triage 标签见 `docs/agents/triage-labels.md`。

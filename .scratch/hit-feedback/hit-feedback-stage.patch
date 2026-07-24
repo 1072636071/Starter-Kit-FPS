@@ -1,0 +1,25 @@
+diff --git a/objects/monster_melee.gd b/objects/monster_melee.gd
+--- a/objects/monster_melee.gd
++++ b/objects/monster_melee.gd
+@@ -128,3 +128,4 @@
+ func damage(amount: float):
+ 	Audio.play("sounds/enemy_hurt.ogg")
++	HitFeedback.flash(self)
+ 	health -= amount
+diff --git a/objects/monster_ranged.gd b/objects/monster_ranged.gd
+--- a/objects/monster_ranged.gd
++++ b/objects/monster_ranged.gd
+@@ -157,3 +157,4 @@
+ func damage(amount: float):
+ 	Audio.play("sounds/enemy_hurt.ogg")
++	HitFeedback.flash(self)
+ 	health -= amount
+diff --git a/objects/enemy.gd b/objects/enemy.gd
+--- a/objects/enemy.gd
++++ b/objects/enemy.gd
+@@ -29,4 +29,5 @@
+ func damage(amount):
+ 	Audio.play("sounds/enemy_hurt.ogg")
++	HitFeedback.flash(self)
+
+ 	health -= amount

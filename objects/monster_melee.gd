@@ -18,6 +18,7 @@ var _base_position: Vector3
 @onready var model: Node3D = $Model
 @onready var attack_timer: Timer = $AttackTimer
 @onready var hit_area: Area3D = $HitArea
+@onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready():
 	_base_position = position
@@ -36,41 +37,54 @@ func _ready():
 func _physics_process(delta):
 	if destroyed or not player:
 		return
-	
+
 	# 重力
 	gravity += 20.0 * delta
 	if gravity > 0 and is_on_floor():
 		gravity = 0.0
-	
+
 	var to_player := player.global_position - global_position
 	to_player.y = 0.0
 	var distance := to_player.length()
-	
-	# 面向玩家
-	if distance > 0.1:
-		var look_target := global_position + to_player.normalized()
-		look_target.y = global_position.y
-		look_at(look_target, Vector3.UP, true)
-	
-	# 追踪逻辑
+
+	# 追踪/攻击/待机
 	if distance > attack_range and distance < chase_range and not _is_attacking:
-		var direction := to_player.normalized()
-		velocity.x = direction.x * move_speed
-		velocity.z = direction.z * move_speed
-		# 走路摆动动画
+		# 通过 NavMesh 寻路：朝下一路径点而非玩家直线方向，可绕过墙体、跨过 ≤ step_height 的台阶
+		nav_agent.target_position = player.global_position
+		if not nav_agent.is_navigation_finished():
+			var to_next := nav_agent.get_next_path_position() - global_position
+			to_next.y = 0.0
+			var direction := to_next.normalized() if to_next.length() > 0.1 else Vector3.ZERO
+			velocity.x = direction.x * move_speed
+			velocity.z = direction.z * move_speed
+			_face_direction(direction)
+		else:
+			# 路径走完但仍未进入攻击范围（玩家移动了），停在原地面向玩家
+			velocity.x = 0.0
+			velocity.z = 0.0
+			_face_direction(to_player)
 		_animate_walk(delta)
 	elif distance <= attack_range and _can_attack and not _is_attacking:
 		velocity.x = 0.0
 		velocity.z = 0.0
+		_face_direction(to_player)
 		_start_attack()
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, move_speed * delta * 5)
 		velocity.z = move_toward(velocity.z, 0.0, move_speed * delta * 5)
-		# 待机动画
+		_face_direction(to_player)
 		_animate_idle(delta)
-	
+
 	velocity.y = -gravity
 	move_and_slide()
+
+## 朝指定水平方向 look（不影响 y）
+func _face_direction(direction: Vector3) -> void:
+	if direction.length_squared() <= 0.01:
+		return
+	var look_target := global_position + direction.normalized()
+	look_target.y = global_position.y
+	look_at(look_target, Vector3.UP, true)
 
 ## 走路摆动
 var _walk_time: float = 0.0
@@ -127,14 +141,15 @@ func _on_attack_cooldown():
 ## 受到伤害
 func damage(amount: float):
 	Audio.play("sounds/enemy_hurt.ogg")
+	HitFeedback.flash(self)
 	health -= amount
-	
+
 	# 受击闪烁
 	if model:
 		var tween := create_tween()
 		model.scale = Vector3(1.1, 0.9, 1.1)
 		tween.tween_property(model, "scale", Vector3.ONE, 0.15)
-	
+
 	if health <= 0 and not destroyed:
 		destroy()
 

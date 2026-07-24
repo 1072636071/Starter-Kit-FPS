@@ -1,6 +1,9 @@
 extends Node3D
 
+const CombatUtils = preload("res://scripts/combat_utils.gd")
+
 @export var player: Node3D
+@export var enemy_spread: float = 0.08
 
 @onready var muzzle_a = $MuzzleA
 @onready var muzzle_b = $MuzzleB
@@ -28,6 +31,7 @@ func _process(delta):
 
 func damage(amount):
 	Audio.play("sounds/enemy_hurt.ogg")
+	HitFeedback.flash(self)
 
 	health -= amount
 
@@ -62,6 +66,9 @@ func _on_timer_timeout():
 	var projectile_instance = projectile.instantiate()
 	
 	var shoot_direction = (player.global_position + Vector3(0, 0.5, 0) - global_position).normalized()
+	
+	# Add spread with distance scaling
+	shoot_direction = CombatUtils.apply_enemy_spread(shoot_direction, enemy_spread, global_position.distance_to(player.global_position))
 	
 	projectile_instance.direction = shoot_direction
 	projectile_instance.speed = 30.0
