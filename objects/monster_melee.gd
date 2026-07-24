@@ -25,7 +25,14 @@ func _ready():
 	attack_timer.wait_time = attack_cooldown
 	attack_timer.one_shot = true
 	attack_timer.timeout.connect(_on_attack_cooldown)
-	
+
+	# T1（minimap）：怪物真实 mesh 从默认 layer 1 挪到 layer 3（value = 4），
+	# 使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20
+	# 故真实 FPS 视野不受影响。与 player.gd 中武器模型 layers = 2 同模式。
+	# 参见 ADR 007 与 CONTEXT.md「Minimap Enemy Layer」。
+	for child in model.find_children("*", "MeshInstance3D", true, false):
+		child.layers = 4
+
 	# 如果未指定 player，自动查找
 	if not player:
 		player = get_tree().get_first_node_in_group("player")

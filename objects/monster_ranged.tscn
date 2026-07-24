@@ -12,6 +12,10 @@ script = ExtResource("2_script")
 
 [node name="Model" type="Node3D" parent="."]
 
+; T1（minimap）：怪物真实 mesh 从 layer 1 挪到 layer 3 由 monster_ranged.gd._ready()
+; 运行时设置（与 player.gd 中武器模型 layers = 2 同模式），使俯视相机
+; （cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20 不受影响。
+; 参见 ADR 007 与 CONTEXT.md「Minimap Enemy Layer」。
 [node name="CharacterModel" parent="Model" instance=ExtResource("1_model")]
 transform = Transform3D(0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0)
 

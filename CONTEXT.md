@@ -91,12 +91,30 @@
 | **Melee Tuning（近战调参）** | 初版手感参数（均为 `@export`，可随时调）：`melee_damage = 40`（高于枪械单发，补偿短射程）、`melee_cooldown = 0.5s`（一次挥砍节奏）、`melee_reach = 2.0m`（命中区前向深度，与 `monster_melee.attack_range` 一致）、命中区宽度/高度约 `1.5m`（覆盖身前一小片，非全向）。 |
 | **Melee Action（近战输入）** | 新增的独立输入动作，动作名 `melee`，默认绑定 **V 键**（已核查 `project.godot`：W/A/S/D、Space、E、R 已占用，V 空闲无冲突）。与 `shoot`/`aim`/`reload`/`weapon_toggle` 完全解耦，单独触发近战挥砍。 |
 | **Swing Duration（挥砍总时长）** | 一次挥砍动画从开始到结束的总时长，**0.4s**。必须 ≤ `melee_cooldown`（0.5s），留 0.1s 缓冲避免挥砍未结束冷却已就绪导致的节奏冲突。 |
-| **Active Frames（活跃帧）** | 挥砍动画中**Melee Hitbox 的 `monitoring` 开启、可造成伤害的时间窗**，从挥砍启动后 **0.1s** 到 **0.3s**（共 0.2s）。0–0.1s 为"举剑蓄力"前摇（无伤害），0.3–0.4s 为"收剑"后摇（伤害窗口已过）。由 Tween 的 `tween_callback` 在 0.1s 开启 `monitoring`、0.3s 关闭 `monitoring`、0.4s 隐藏 viewmodel 实现。 |
+| **Active Frames（活跃帧）** | 挥砍动画中**Melee Hitbox 的 `monitoring` 开启、可造成伤害的时间窗**，从挥砍启动后 **0.1s** 到 **0.3s**（共 0.2s）。0–0.1s 为"举剑蓄力"前摇（无伤害），0.3–0.4s 为"收剑"后摇（伤害窗口已过）。monitoring 切换由 `SceneTree.create_timer()` 在 0.1s 开启、0.3s 关闭，**与挥砍 Tween 解耦**——这样挥砍 Tween 被 `kill()`（连续挥砍）时 monitoring 切换仍按时执行，避免 `tween_callback` 因 Tween 被杀而不触发、导致 monitoring 滞留。viewmodel 隐藏仍由 Tween 的 `tween_callback` 在 0.4s 收尾。 |
 | **Swing Animation Style（挥砍动画样式）** | 采用**下劈（Downward Slash）**：剑从右上向左下划过屏幕。前摇 0.1s 把剑举到右上 → 活跃帧 0.2s 划到左下 → 后摇 0.1s 收回隐藏。用单个 Tween 同时 tween `rotation_degrees` 和 `position` 实现，无 AnimationPlayer 依赖。**选此方案的理由：** 第一人称视角下下劈视觉冲击最强（剑尖从视野上方划到下方）；与"挥砍"语义最贴合（横扫视觉弱、突刺像长矛）；与 Q1 时间窗天然契合。被否决的替代：横扫（FP 下视觉弱）、突刺（不像剑）、左右交替变体（v1 不必要）。 |
 | **Melee-Reload Independence（近战换弹并发）** | 近战挥砍与换弹**互不阻塞**：换弹中按 V 可触发挥砍，挥砍中按 R 可触发换弹。理由：ADR 006 的核心就是近战与 `Weapon`/弹药体系解耦——若近战被换弹阻塞就破坏解耦语义。换弹是枪的事，近战是手的事，两套独立状态机并行运行。冷却（`melee_cooldown`）只约束近战自身，不查 `is_reloading`；换弹逻辑（`action_reload`/`_step_reload`）不查近战状态。 |
 | **Melee Hitbox Wall Piercing（近战命中区穿墙语义）** | v1 命中结算用 `has_method("damage")` 过滤重叠物体——`get_overlapping_bodies()` 返回的 StaticBody3D（墙体、平台）因无 `damage()` 方法自然被跳过，无需 layer/mask 配置。**已知边缘情况**：薄墙后的敌人可能被穿墙砍中（盒子几何上重叠但视线被挡）。v1 不加 RayCast 视线检查（过度工程），记录为未来增强。墙体不会被错误伤害，但也不会阻挡对墙后敌人的伤害。 |
 | **Melee Viewmodel Lifecycle（近战视图模型生命周期）** | Melee Viewmodel 在玩家 `_ready()` 中**实例化一次**，作为 `CameraItem` 的子节点（与 `Container` 平级，不在 Container 内——否则会被 `change_weapon()` 的 `remove_child()` 清掉）。初始 `visible = false`，每次挥砍复用同一实例：show → Tween 挥砍 → hide。**不**每次挥砍重新 instantiate。所有 `MeshInstance3D` 的 `layers = 2`（仅武器相机渲染），与 `change_weapon()` 中枪械模型设置方式一致。 |
 | **Melee Swing Sound（挥砍音效）** | v1 **跳过**——`sounds/` 下无合适素材（只有枪声 `blaster*.ogg`、敌人声 `enemy_*.ogg`、移动声 `jump_*.ogg`/`land.ogg`/`walking.ogg`、切枪 `weapon_change.ogg`，无 whoosh/挥砍声）。T3 中的"可选音效"明确为 v1 不做，留待未来增加 `sword_swing.ogg` 类素材后接入。**不**复用现有音效（语义不符，反而破坏手感）。 |
 | **Melee Cooldown Implementation（近战冷却实现）** | 冷却用**浮点累加器**（`melee_cooldown_remaining: float`，在 `_process(delta)` 中递减），**不**新增 Timer 节点。与现有 `_step_reload(delta)` 的 `reload_time_remaining` 同模式。触发挥砍时设 `melee_cooldown_remaining = melee_cooldown`，每帧 `-= delta`，归零方可再次挥砍。避免向 `player.tscn` 添加 Timer 节点，与 `blaster_cooldown` Timer（射击冷却用）解耦。 |
+
+## 小地图系统（Minimap）
+
+| 术语 | 定义 |
+|------|------|
+| **Minimap（小地图）** | 屏幕角落的小型俯视地图，显示玩家与周围实体位置。渲染方案见 [ADR 007](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/007-minimap-subviewport-camera.md)：采用**动态俯视相机**，而非静态底图或导航网格可视化。 |
+| **Minimap Camera（俯视相机）** | 场景中高处垂直朝下的第二台 `Camera3D`，正交投影，渲染进 `SubViewport`。通过 `cull_mask`/图层控制"哪些节点进小地图"。 |
+| **Minimap Viewport（小地图视口）** | 承载俯视相机渲染的 `SubViewport` 节点。 |
+| **Minimap Texture（小地图纹理）** | `ViewportTexture`，把 `Minimap Viewport` 的渲染结果作为 `TextureRect.texture` 显示到 HUD 角落。 |
+| **Minimap Orientation（小地图朝向）** | **北朝上（north-up）**：俯视相机朝向固定、不随玩家旋转，地图永远与真实世界朝向一致。玩家位置用一个小**朝向箭头（Player Blip）**表示其 facing。与 heading-up（相机随玩家转）相反，地面永远稳定好读。 |
+| **Player Blip（玩家光点）** | 北朝上方案下，小地图上表示玩家位置的**朝向箭头**。**采用 2D 叠加**：每帧把玩家世界 (x,z) 投影为小地图 UV，在圆形 `TextureRect` 之上用一个 2D `Control` 箭头表示，箭头随玩家 yaw 旋转以指示 facing；相机本身不转。非 3D 图层标记（避免泄漏进真实 3D 视野）。 |
+| **Enemy Blip（敌人光点）** | 小地图上表示敌人的标记，**两种敌人都显示**（不按视线/距离过滤），**采用 2D 叠加**：每帧把敌人世界 (x,z) 投影为小地图 UV，在圆形 `TextureRect` 之上用 2D 圆点/图标表示，近战/远程用形状或深浅区分。非 3D 图层标记。 |
+| **Minimap Shape & Position（小地图形状与位置）** | **圆形**，位于**右上角**（避开左下血条、右下弹药列表）。方形的 `SubViewport` 渲染经**圆形遮罩**（`ShaderMaterial` 径向 alpha）裁成圆，隐藏俯视渲染四角的畸变。 |
+| **Minimap Zoom（小地图缩放/覆盖范围）** | **全图覆盖（~160m）**：俯视正交相机半高约 80m，固定俯视整个 160×160 世界（边界 ±80），相机本身不随玩家移动。玩家/敌人 blip 在图内移动。与"敌人全显示"零冲突。 |
+| **Minimap Cull Mask（小地图相机剔除掩码）** | 俯视相机 `cull_mask = layer 1`（仅世界/地形）。**不**含 layer 2（武器 viewmodel，天然不进图）。敌人真实 3D mesh 已从 layer 1 挪到 layer 3（见下），故俯视渲染无敌人 blob——blip 由 2D 叠加独立绘制。 |
+| **Minimap Enemy Layer（敌人小地图图层）** | 敌人真实 3D mesh 从默认 **layer 1 挪到 layer 3**，使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20 故真实 FPS 视野不受影响。实现位置：`monster_melee.gd` / `monster_ranged.gd` 的 `_ready()` 中通过 `model.find_children("*", "MeshInstance3D", true, false)` 遍历并设 `child.layers = 4`（layer 3 的 bitmask 值）。选用运行时设置而非 `.tscn` editable_instance：.glb 实例内 mesh 节点路径不稳定（存在 `character-a` 中间节点），editable_instance 路径易失效；运行时按类型遍历更健壮。 |
+| **Minimap Projection（小地图投影）** | 因全图固定正交相机，实体世界 (x,z) → 小地图 UV 为**线性映射**（无需透视除法）：`uv = (world_pos.xz - world_min) / world_size`，再换算到圆形 `TextureRect` 的局部像素坐标放置 2D blip。 |
+| **Minimap Integration（小地图集成位置）** | 世界侧：俯视相机 + `SubViewport` 加进 `main.tscn`（`Main` 子节点，**不是** Player 下，因相机固定不跟玩家）；UI 侧：圆形 `TextureRect` + blip 层加进 `HUD`（`CanvasLayer`）下的 `Minimap` `Control` 容器；逻辑由新建 `scripts/minimap.gd` 驱动，负责每帧投影实体 (x,z)→UV 并管理 2D blip。 |
 
 
