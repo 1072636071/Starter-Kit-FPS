@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://bmeleevmw2pla"]
+
+[ext_resource type="PackedScene" path="res://models/melee_weapons/Sword6.glb" id="1_sword"]
+
+[node name="MeleeViewmodel" type="Node3D"]
+position = Vector3(0.8, -0.8, -2.5)
+rotation_degrees = Vector3(-15, 0, 30)
+
+[node name="SwordScene" parent="." instance=ExtResource("1_sword")]
+scale = Vector3(5, 5, 5)

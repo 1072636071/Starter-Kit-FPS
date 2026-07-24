@@ -1,48 +1,38 @@
-extends CharacterBody3D
-## 近战怪物：追踪玩家并发动冲锋攻击
+extends "res://objects/monster_base.gd"
+## 近战怪物：追踪玩家并发动骨骼攻击动画
+## T2: 持剑/空手 + attack-melee-right 骨骼剪辑 + 活跃帧伤害结算
+## T4/T5 骨骼移动/待机/死亡动画已在基类实现
 
-@export var player: Node3D
 @export var move_speed: float = 3.5
 @export var chase_range: float = 25.0
 @export var attack_range: float = 2.0
 @export var attack_damage: float = 15.0
 @export var attack_cooldown: float = 1.2
 @export var health: float = 120.0
+## 近战武器模型（默认 Mistsplitter.glb，与玩家 Sword6.glb 不同）；留空则空手
+@export var melee_weapon_model: PackedScene = preload("res://models/melee_weapons/Mistsplitter.glb")
+## attack-melee-right 活跃帧时刻（约 0.2s，按剪辑实际时长微调）
+@export var active_frame_time: float = 0.2
 
-var gravity: float = 0.0
-var destroyed := false
-var _can_attack := true
-var _is_attacking := false
-var _base_position: Vector3
-
-@onready var model: Node3D = $Model
-@onready var attack_timer: Timer = $AttackTimer
-@onready var hit_area: Area3D = $HitArea
-@onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
+var weapon_instance: Node3D
 
 func _ready():
-	_base_position = position
-	attack_timer.wait_time = attack_cooldown
-	attack_timer.one_shot = true
-	attack_timer.timeout.connect(_on_attack_cooldown)
+	super._ready()
 
-	# T1（minimap）：怪物真实 mesh 从默认 layer 1 挪到 layer 3（value = 4），
-	# 使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20
-	# 故真实 FPS 视野不受影响。与 player.gd 中武器模型 layers = 2 同模式。
-	# 参见 ADR 007 与 CONTEXT.md「Minimap Enemy Layer」。
-	for child in model.find_children("*", "MeshInstance3D", true, false):
-		child.layers = 4
-
-	# 如果未指定 player，自动查找
-	if not player:
-		player = get_tree().get_first_node_in_group("player")
-	if not player:
-		var players = get_tree().get_nodes_in_group("player")
-		if players.size() > 0:
-			player = players[0]
+	# T2: 挂近战武器模型（melee_weapon_model = null 即空手变体）
+	if melee_weapon_model and arm_right:
+		weapon_instance = melee_weapon_model.instantiate()
+		arm_right.add_child(weapon_instance)
+		# 本地偏移：手臂远端→手掌位置；剑朝下竖直握持
+		weapon_instance.position = Vector3(0.0, -0.3, 0.0)
+		weapon_instance.rotation_degrees = Vector3(0, 0, 0)
+		weapon_instance.scale = Vector3(0.4, 0.4, 0.4)
+		# 武器模型 layers = 4（layer 3：进主相机，不进小地图）
+		for child in weapon_instance.find_children("*", "MeshInstance3D", true, false):
+			child.layers = 4
 
 func _physics_process(delta):
-	if destroyed or not player:
+	if _dead or not player:
 		return
 
 	# 重力
@@ -70,7 +60,6 @@ func _physics_process(delta):
 			velocity.x = 0.0
 			velocity.z = 0.0
 			_face_direction(to_player)
-		_animate_walk(delta)
 	elif distance <= attack_range and _can_attack and not _is_attacking:
 		velocity.x = 0.0
 		velocity.z = 0.0
@@ -80,58 +69,36 @@ func _physics_process(delta):
 		velocity.x = move_toward(velocity.x, 0.0, move_speed * delta * 5)
 		velocity.z = move_toward(velocity.z, 0.0, move_speed * delta * 5)
 		_face_direction(to_player)
-		_animate_idle(delta)
 
 	velocity.y = -gravity
 	move_and_slide()
 
-## 朝指定水平方向 look（不影响 y）
-func _face_direction(direction: Vector3) -> void:
-	if direction.length_squared() <= 0.01:
-		return
-	var look_target := global_position + direction.normalized()
-	look_target.y = global_position.y
-	look_at(look_target, Vector3.UP, true)
+	# T4: 骨骼动画选择器（近战静止播 idle）
+	_select_animation("idle")
 
-## 走路摆动
-var _walk_time: float = 0.0
-func _animate_walk(delta: float):
-	_walk_time += delta * 8.0
-	if model:
-		model.rotation.x = sin(_walk_time) * 0.08
-		model.position.y = abs(sin(_walk_time)) * 0.05
-
-## 待机呼吸
-var _idle_time: float = 0.0
-func _animate_idle(delta: float):
-	_idle_time += delta * 2.0
-	if model:
-		model.rotation.x = lerp(model.rotation.x, 0.0, delta * 5.0)
-		model.position.y = sin(_idle_time) * 0.02
-
-## 发动攻击：前冲 + 身体倾斜
+## T2: 发动攻击——播 attack-melee-right 骨骼剪辑，活跃帧结算伤害
 func _start_attack():
 	_is_attacking = true
 	_can_attack = false
 	attack_timer.start()
-	
-	Audio.play("sounds/enemy_attack.ogg")
-	
-	var tween := create_tween()
-	# 蓄力后仰
-	tween.tween_property(model, "rotation:x", deg_to_rad(-20), 0.15)
-	# 前冲
-	tween.tween_property(model, "rotation:x", deg_to_rad(30), 0.1)
-	tween.parallel().tween_property(self, "position", position + (global_transform.basis * Vector3(0, 0, -0.8)), 0.1)
-	# 恢复
-	tween.tween_property(model, "rotation:x", 0.0, 0.2)
-	tween.tween_callback(_on_attack_finished)
-	
-	# 攻击判定延迟
-	get_tree().create_timer(0.2).timeout.connect(_deal_damage)
 
+	Audio.play("sounds/enemy_attack.ogg")
+
+	# T2: 播骨骼攻击剪辑（持剑=挥剑，空手=拳击），取代整体 lunge Tween
+	if anim_player and anim_player.has_animation("attack-melee-right"):
+		anim_player.play("attack-melee-right")
+		# 用实际剪辑时长驱动 _is_attacking 恢复，不硬编码
+		var clip_length := anim_player.get_animation("attack-melee-right").length
+		get_tree().create_timer(clip_length).timeout.connect(_on_attack_finished)
+	else:
+		get_tree().create_timer(0.45).timeout.connect(_on_attack_finished)
+
+	# T2: 伤害结算对齐活跃帧（约剪辑 0.2s 处），距离判定逻辑不变
+	get_tree().create_timer(active_frame_time).timeout.connect(_deal_damage)
+
+## T2: 伤害结算（距离判定，沿用 attack_range）
 func _deal_damage():
-	if destroyed or not player:
+	if _dead or not player:
 		return
 	var to_player := player.global_position - global_position
 	to_player.y = 0.0
@@ -141,32 +108,3 @@ func _deal_damage():
 
 func _on_attack_finished():
 	_is_attacking = false
-
-func _on_attack_cooldown():
-	_can_attack = true
-
-## 受到伤害
-func damage(amount: float):
-	Audio.play("sounds/enemy_hurt.ogg")
-	HitFeedback.flash(self)
-	health -= amount
-
-	# 受击闪烁
-	if model:
-		var tween := create_tween()
-		model.scale = Vector3(1.1, 0.9, 1.1)
-		tween.tween_property(model, "scale", Vector3.ONE, 0.15)
-
-	if health <= 0 and not destroyed:
-		destroy()
-
-## 死亡
-func destroy():
-	Audio.play("sounds/enemy_destroy.ogg")
-	destroyed = true
-	
-	# 死亡动画：缩小消失
-	var tween := create_tween()
-	tween.tween_property(model, "scale", Vector3(0.01, 0.01, 0.01), 0.3)
-	tween.tween_property(model, "position:y", -0.5, 0.3)
-	tween.tween_callback(queue_free)

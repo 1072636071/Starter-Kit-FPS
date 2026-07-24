@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 Blocked by: 03
 
 # T4 — Melee Hitbox 命中区与伤害结算
@@ -108,15 +108,15 @@ _melee_process_hits()
 
 ## 验收标准
 
-- [ ] `player.tscn` 新增 `MeleeHitbox` Area3D 节点（挂 Player 根下），`monitoring = false` 默认关闭
-- [ ] 命中区几何：`BoxShape3D(1.5, 1.5, 2.0)`，中心 `Vector3(0, 0.5, -1.0)`
-- [ ] 仅在挥砍活跃帧（0.1s–0.3s）开启 `monitoring`，动画其余时间关闭
-- [ ] 命中目标用 `has_method("damage")` 过滤，墙体等无 `damage()` 的物体被跳过
-- [ ] 收集到重叠怪物后用 `_melee_hit_targets` 字典按 `instance_id` 去重，单次挥砍对同一敌人只调用一次 `damage(melee_damage)`
-- [ ] 命中后怪物按 `melee_damage=40` 扣血，并自动触发 Hit Flash 泛红（复用 `HitFeedback.flash`）
-- [ ] 挥砍未命中任何物体时安静结束，无报错
-- [ ] 命中区不随相机 pitch 倾斜（看天/看地时命中区保持水平）
-- [ ] 与现有 `Weapon`/弹体/弹药体系无耦合、无副作用
+- [x] `player.tscn` 新增 `MeleeHitbox` Area3D 节点（挂 Player 根下），`monitoring = false` 默认关闭
+- [x] 命中区几何：`BoxShape3D(1.5, 1.5, 2.0)`，中心 `Vector3(0, 0.5, -1.0)`
+- [x] 仅在挥砍活跃帧（0.1s–0.3s）开启 `monitoring`，动画其余时间关闭
+- [x] 命中目标用 `has_method("damage")` 过滤，墙体等无 `damage()` 的物体被跳过
+- [x] 收集到重叠怪物后用 `_melee_hit_targets` 字典按 `instance_id` 去重，单次挥砍对同一敌人只调用一次 `damage(melee_damage)`
+- [x] 命中后怪物按 `melee_damage=40` 扣血，并自动触发 Hit Flash 泛红（复用 `HitFeedback.flash`）
+- [x] 挥砍未命中任何物体时安静结束，无报错
+- [x] 命中区不随相机 pitch 倾斜（看天/看地时命中区保持水平）
+- [x] 与现有 `Weapon`/弹体/弹药体系无耦合、无副作用
 
 ## 评论
 

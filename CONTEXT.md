@@ -84,9 +84,9 @@
 
 | 术语 | 定义 |
 |------|------|
-| **Melee（近战）** | 玩家对怪物发动的近身攻击，**与远程武器（`Weapon`/弹体）完全解耦**：由独立的输入动作触发，不占用 `weapons` 数组槽位、不参与弹药/换弹体系。参见 [ADR 006](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/006-melee-as-independent-system.md)。命中检测复用三种怪物已有的 `damage(amount)` 接口；**注：** `monster_melee.tscn` 虽有 `HitArea` Area3D 节点，但其 `monster_melee.gd::_deal_damage()` 实际用的是距离判定而非 Area3D 监听——该节点是"声明而未使用"的死代码，**不构成真正的用法先例**。玩家近战的 Area3D + `get_overlapping_bodies()` 是项目内的**首次**实现。 |
+| **Melee（近战）** | 玩家对怪物发动的近身攻击，**与远程武器（`Weapon`/弹体）完全解耦**：由独立的输入动作触发，不占用 `weapons` 数组槽位、不参与弹药/换弹体系。参见 [ADR 006](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/006-melee-as-independent-system.md)。命中检测复用三种怪物已有的 `damage(amount)` 接口；**注：** `monster_melee.tscn` 原 `HitArea` Area3D 节点已在 T2 中删除（`monster_melee.gd::_deal_damage()` 实际用距离判定而非 Area3D 监听，该节点曾是"声明而未使用"的死代码）。玩家近战的 Area3D + `get_overlapping_bodies()` 是项目内的**首次**实现。 |
 | **Melee Viewmodel（近战视图模型）** | 近战剑的视图模型（viewmodel），采用**瞬态**方式：平时隐藏，仅在按下近战键的挥砍动画期间显示并随手臂摆动，动画结束自动收回隐藏。与常驻的枪械视图模型（`CameraItem/Container` 内）互不干扰。模型来源为 `quaternius_swords.glb`（需导入项目，建议置于 `models/`）。 |
-| **Melee Hitbox（近战命中区）** | 玩家正前方的 `Area3D` 命中区，仅在挥砍动画的"活跃帧"开启 `monitoring`，通过 `get_overlapping_bodies()` 收集命中怪物，每个敌人**每次挥砍只结算一次伤害**（用 `Set` 去重）。命中后调用怪物的 `damage(melee_damage)` 接口。**注：** 与 `monster_melee` 的 `HitArea` 节点同名但实现模式不同——`monster_melee` 的 HitArea 是死代码，玩家近战才是项目内 Area3D 命中区模式的首个真实用例。 |
+| **Melee Hitbox（近战命中区）** | 玩家正前方的 `Area3D` 命中区，仅在挥砍动画的"活跃帧"开启 `monitoring`，通过 `get_overlapping_bodies()` 收集命中怪物，每个敌人**每次挥砍只结算一次伤害**（用 `Set` 去重）。命中后调用怪物的 `damage(melee_damage)` 接口。**注：** 与 `monster_melee` 原 `HitArea` 节点同名但实现模式不同——`monster_melee` 的 HitArea 是死代码（已于 T2 删除），玩家近战才是项目内 Area3D 命中区模式的首个真实用例。 |
 | **Melee Hitbox Orientation（命中区朝向）** | Melee Hitbox 挂在 **Player 根节点**下（不是 Camera），故**只跟随玩家 yaw（水平转向），不跟随相机 pitch（俯仰）**——命中区始终保持水平 slab 形态。定位：中心 `Vector3(0, 0.5, -1.0)`（前方 1m、腰部高度），`BoxShape3D(1.5, 1.5, 2.0)`（宽×高×深），世界坐标覆盖 y∈[0.25, 1.75]。**理由：** 近战短射程+0.5s 冷却下可预测性优于技巧表达；与射击系统（用相机方向+散布做瞄准技巧）差异化才有辨识度；飞行敌人高度本就常超出 1.5m 盒子，pitch 跟踪也未必够得着。被否决的替代：挂在 Camera 下随 pitch 倾斜（盒子会穿地板、多怪叠层误砍），或 pitch-clamped 折中（实现复杂阈值难调）。 |
 | **Melee Tuning（近战调参）** | 初版手感参数（均为 `@export`，可随时调）：`melee_damage = 40`（高于枪械单发，补偿短射程）、`melee_cooldown = 0.5s`（一次挥砍节奏）、`melee_reach = 2.0m`（命中区前向深度，与 `monster_melee.attack_range` 一致）、命中区宽度/高度约 `1.5m`（覆盖身前一小片，非全向）。 |
 | **Melee Action（近战输入）** | 新增的独立输入动作，动作名 `melee`，默认绑定 **V 键**（已核查 `project.godot`：W/A/S/D、Space、E、R 已占用，V 空闲无冲突）。与 `shoot`/`aim`/`reload`/`weapon_toggle` 完全解耦，单独触发近战挥砍。 |
@@ -98,6 +98,27 @@
 | **Melee Viewmodel Lifecycle（近战视图模型生命周期）** | Melee Viewmodel 在玩家 `_ready()` 中**实例化一次**，作为 `CameraItem` 的子节点（与 `Container` 平级，不在 Container 内——否则会被 `change_weapon()` 的 `remove_child()` 清掉）。初始 `visible = false`，每次挥砍复用同一实例：show → Tween 挥砍 → hide。**不**每次挥砍重新 instantiate。所有 `MeshInstance3D` 的 `layers = 2`（仅武器相机渲染），与 `change_weapon()` 中枪械模型设置方式一致。 |
 | **Melee Swing Sound（挥砍音效）** | v1 **跳过**——`sounds/` 下无合适素材（只有枪声 `blaster*.ogg`、敌人声 `enemy_*.ogg`、移动声 `jump_*.ogg`/`land.ogg`/`walking.ogg`、切枪 `weapon_change.ogg`，无 whoosh/挥砍声）。T3 中的"可选音效"明确为 v1 不做，留待未来增加 `sword_swing.ogg` 类素材后接入。**不**复用现有音效（语义不符，反而破坏手感）。 |
 | **Melee Cooldown Implementation（近战冷却实现）** | 冷却用**浮点累加器**（`melee_cooldown_remaining: float`，在 `_process(delta)` 中递减），**不**新增 Timer 节点。与现有 `_step_reload(delta)` 的 `reload_time_remaining` 同模式。触发挥砍时设 `melee_cooldown_remaining = melee_cooldown`，每帧 `-= delta`，归零方可再次挥砍。避免向 `player.tscn` 添加 Timer 节点，与 `blaster_cooldown` Timer（射击冷却用）解耦。 |
+
+## 怪物武器与动画（Monster Weapons & Animation）
+
+> **v2 修正**：初版术语基于"怪物 GLB 是静态网格、无骨骼、只能程序化 Tween"的误判，已证伪。两个怪物 GLB 实为**带 30 条命名动画的节点式刚体绑定**（解析 GLB 确认：`attack-melee-right/left`、`attack-kick-right/left`、`holding-right/left/both`、`holding-right-shoot` 等），导入后 GLB 实例自带 `AnimationPlayer`。`import_as_skeleton_bones=false` 仅表示不暴露骨骼节点，不等于无动画。详见 [ADR 008](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/008-monster-weapons-and-animations.md) 顶部修订记录。
+
+| 术语 | 定义 |
+|------|------|
+| **Monster Weapon（怪物武器）** | 人形怪物（`monster_ranged` / `monster_melee`）装备并展示的**可见武器模型**，挂为 `arm-right` 节点的子节点（非 `Model` 固定变换）。区分于玩家侧：玩家枪械在 `CameraItem/Container`（viewmodel，layer 2），怪物武器是真实世界网格（layer 3）。远程怪物用枪、近战怪物用剑、空手怪无武器。**背景约束（已修正）：** 怪物 GLB 是节点式刚体绑定（`character-f → root → torso → arm-right/arm-left/head`，`skins` 为空即无顶点蒙皮），自带 `AnimationPlayer` 与全部攻击/持械动画；武器挂 `arm-right` 后随手臂骨骼动画自然跟随。 |
+| **Arm-Right Mount（手臂挂载点）** | 因 `arm-right` / `arm-left` 是手臂远端节点（**无独立 hand 节点**），武器模型作为 `arm-right` 的子 `Node3D` 挂载，并以**本地偏移**（position，约手臂长度，朝下/朝前）调到"手掌"位置——该偏移是手调常量，靠试玩微调。攻击时 `arm-right` 的骨骼动画驱动手臂，武器随之挥动/随枪口指向。取代了初版"手部固定变换"概念。 |
+| **Animation Clips（动画剪辑）** | 怪物 GLB 自带、经 `AnimationPlayer` 播放的命名剪辑。与本次相关的有：`attack-melee-right/left`（手臂挥击/拳击）、`attack-kick-right/left`（踢击）、`holding-right/left/both`（持械静止姿态）、`holding-right-shoot` / `holding-left-shoot` / `holding-both-shoot`（持枪射击姿态）、`walk` / `run` / `sprint` / `idle` / `die` 等。T1–T5 已全部接入：攻击用 `attack-melee-right`、持枪用 `holding-right`、移动用 `walk`/`run`（按速度选取，静止时近战播 `idle`、远程保持 `holding-right`）、死亡用 `die`。已移除程序化 `_animate_walk`/`_animate_idle` bob 与整体缩小 Tween（避免与骨骼动画双重抖动）。 |
+| **Gun Model（枪模型）** | 远程怪物（`monster_ranged`）手持的枪模型，复用 `models/weapons/blaster.glb`，作为 `arm-right` 的子节点挂载（本地偏移调到右手、枪管朝怪物 forward=-z）。通过 `@export var gun_model: PackedScene` 配置，默认 `blaster.glb`。 |
+| **Muzzle Marker3D（枪口标记）** | 挂在枪模型下的 `Marker3D` 子节点，位于枪管前端，**作为弹体生成点**，取代原身体 `ShootPoint`。`_fire_projectile()` 在该标记的世界变换处 `instantiate(projectile.tscn)`。 |
+| **Holding Pose（持枪/持械姿态）** | 远程怪物常驻的持枪姿态：`_ready()` 播放 `holding-right`（或 `holding-right-shoot`）使右臂保持持枪、枪模型停于手中；攻击时叠加枪口闪光/后坐，姿态本身不重置。近战怪物 v1 不强制常驻姿态，攻击时直接播 `attack-melee-right`。 |
+| **Recoil Tween（后坐 Tween）** | 远程怪物开火时**枪模型自身的程序化回弹**（沿枪局部 +z 轻弹后回位，单 Tween），叠加在 `holding-right` 骨骼姿态之上、互不冲突，取代原整体身体后仰 Tween。枪口在局部 -z（前方），后坐沿 +z（后方）推——与枪口方向相反，物理正确。与玩家侧 `knockback` 后坐力（相机/移动反冲）概念不同——此处仅武器模型可见回弹，不影响怪物 AI 物理。 |
+| **Muzzle Flash（枪口闪光）** | 远程怪物开火时在 `Muzzle` 处播放的一次性 `AnimatedSprite3D` 闪光，素材复用 `sprites/burst_animation.tres`（与 `enemy.tscn` 同款），`layers = 4`（layer 3，进主相机、不进小地图）。与 `enemy_attack.ogg` 音效（场景已有 `AudioStreamPlayer`）共同构成开火反馈。 |
+| **Melee Weapon Model（近战武器模型）** | 近战怪物（`monster_melee`）手持的剑模型，通过 `@export var melee_weapon_model: PackedScene` 配置（**可留空**），默认一把与玩家 `Sword6.glb` **不同**的 `SwordXXX.glb`（怪物武器与玩家区分、更具辨识度）；型号做成配置以便无代码替换。作为 `arm-right` 的子节点挂载（本地偏移调到握持、缩放适配怪物网格）。 |
+| **Attack Animation（攻击动画，怪物近战）** | 近战怪物攻击由 `AnimationPlayer.play("attack-melee-right")` 驱动（取代原整体 lunge Tween）。持剑时剑随手臂劈下，空手时即为拳击。攻击剪辑本身含手臂挥动（及可能的轻微前冲位移），无需手动补前冲 Tween。对应于玩家近战的"挥砍"，但实现是骨骼剪辑而非 viewmodel Tween。 |
+| **Active Frame（活跃帧，怪物近战）** | `attack-melee-right` 剪辑中**伤害结算触发的时刻**，对齐挥砍前摇结束、挥到位的那一帧（约剪辑 0.2s 处，按实际时长微调），用 `SceneTree.create_timer(active_frame_time)` 触发 `_deal_damage`。与玩家近战"活跃帧开启 `monitoring`"机制不同：怪物近战**仍用距离判定**（`_deal_damage` 现有 `attack_range` 逻辑不变），仅把结算时机从前摇后 0.2s 对齐到骨骼剪辑的活跃帧。 |
+| **Empty-Hand Melee（空手近战）** | `monster_melee` 在 `melee_weapon_model = null` 时的变体：**不挂任何武器模型**，攻击同样播放 `attack-melee-right`（拳击），靠手臂骨骼动作完成"手臂近战"，伤害在活跃帧按距离判定结算。无独立逻辑分支，仅是配置态——满足"敌人也可以有空手的，只能使用手臂近战"。 |
+| **monster_base.gd（怪物基类）** | 人形怪物（`monster_ranged` / `monster_melee`）的共享基类（`objects/monster_base.gd`，`extends CharacterBody3D`）。抽取两怪重复的骨骼动画初始化（`_setup_animation_refs` / `_setup_locomotion_loops` / `_set_model_mesh_layers`）、动画选择器（`_select_animation(idle_anim)`，按 idle_anim 参数区分近战 `idle` / 远程 `holding-right`）、受击（`damage`）、死亡（`destroy` 播 `die` 剪辑）逻辑。子类通过 `super._ready()` 调用基类初始化，仅保留各自特有的武器挂载与攻击/移动逻辑。 |
+| **_dead flag（死亡标志）** | `monster_base.gd` 的 `_dead: bool` 状态标志，在 `destroy()` 入口置 `true`。作用：(1) 使 `_physics_process` 提前返回（死亡后不再移动、不再调用动画选择器），避免与 `die` 骨骼剪辑抢动画轨道；(2) 使 `damage()` 顶部 `if _dead: return` 跳过受击（已死亡实体不再结算伤害）；(3) `damage()` 底部 `if health <= 0 and not _dead: destroy()` 防止 `destroy()` 重入。合并了原 `destroyed` 标志（两者始终同时置位、语义等价，故合并为单一 `_dead`）。注：飞行敌人 `enemy.gd` 仍用独立的 `destroyed` 字段（非基类子类，不受影响）。 |
 
 ## 小地图系统（Minimap）
 
@@ -116,5 +137,42 @@
 | **Minimap Enemy Layer（敌人小地图图层）** | 敌人真实 3D mesh 从默认 **layer 1 挪到 layer 3**，使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20 故真实 FPS 视野不受影响。实现位置：`monster_melee.gd` / `monster_ranged.gd` 的 `_ready()` 中通过 `model.find_children("*", "MeshInstance3D", true, false)` 遍历并设 `child.layers = 4`（layer 3 的 bitmask 值）。选用运行时设置而非 `.tscn` editable_instance：.glb 实例内 mesh 节点路径不稳定（存在 `character-a` 中间节点），editable_instance 路径易失效；运行时按类型遍历更健壮。 |
 | **Minimap Projection（小地图投影）** | 因全图固定正交相机，实体世界 (x,z) → 小地图 UV 为**线性映射**（无需透视除法）：`uv = (world_pos.xz - world_min) / world_size`，再换算到圆形 `TextureRect` 的局部像素坐标放置 2D blip。 |
 | **Minimap Integration（小地图集成位置）** | 世界侧：俯视相机 + `SubViewport` 加进 `main.tscn`（`Main` 子节点，**不是** Player 下，因相机固定不跟玩家）；UI 侧：圆形 `TextureRect` + blip 层加进 `HUD`（`CanvasLayer`）下的 `Minimap` `Control` 容器；逻辑由新建 `scripts/minimap.gd` 驱动，负责每帧投影实体 (x,z)→UV 并管理 2D blip。 |
+
+## Roguelike 竞技场系统（Roguelike Arena）
+
+参见 [ADR 009](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/009-arena-run-wave-structure.md)。
+
+| 术语 | 定义 |
+|------|------|
+| **Arena Run（竞技场一局）** | 玩家在单个固定竞技场中的一次完整游戏会话。以玩家死亡（或主动退出）结束；结束后重置全部本局状态（金币、经验、护盾、弹药等）。一局内怪物按波次刷出。 |
+| **Wave（波次）** | 成组刷出的怪物批次。玩家**清空（全灭）**该批后该波结束、进入间歇。波次编号递增，整体难度随编号上升（Escalation）。 |
+| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**数量**第 N 波 = `4 + 2×(N-1)` 只；**类型分阶段解锁**——1–3 波纯 `monster_melee`，第 4 波起混 `monster_ranged`，第 7 波起混 `enemy`（飞行）。见本会话 Q8。 |
+| **Wave Spawn（波次刷怪）** | 每波怪物在**波开始时一次性全刷**入竞技场；玩家**全灭**该批即视为该波清空、进入 Intermission。无 trickle / 分批刷怪。 |
+| **Intermission（波次间歇）** | 两波之间的短暂停顿状态：**停止刷怪**，下一波由**玩家手动确认**开始（本会话 Q6 定为手动确认）。它本身**不是**消费窗口——金币消费走物理商店摊位（Shop，随时 walk-in），升级卡走 XP 即时暂停；间歇只负责"清场→下一波"的节奏断点。 |
+| **Kill Reward（击杀奖励）** | 怪物死亡时结算的奖励，包含金币（Gold）与经验（XP），并小概率额外掉落血包（Health Pack）。三类资源（金币 / 经验 / 血包）的唯一来源（除每局初始值外）。**分档按怪类型**（初值，可调）：`monster_melee` = 5 金 / 5 XP、`monster_ranged` = 8 金 / 8 XP、`enemy`（飞行）= 10 金 / 10 XP。**血包掉率初值 10%**（可调）。**不随波次缩放**——收益靠每波怪物数量 / 种类递增自然增长，避免通胀。见本会话 Q7。 |
+| **Gold（金币）** | 击杀掉落的货币资源，在 Intermission 的**商店**按"发"购买各枪 `reserve` 备弹。映射见 [ADR 012](file:///g:/work/Starter-Kit-FPS/docs/adr/012-gold-buys-reserve-per-bullet.md)。金币只有这一个消费出口（升级由 XP 驱动，不花金币）。 |
+| **gold_cost_per_bullet（单发金价）** | `Weapon` 资源新增属性：玩家在商店花金币买该枪 `reserve` 时每发的金价。初值 `blaster = 1`、`blaster_repeater = 2`（强枪更贵）。购买受该枪 `max_reserve` 封顶。 |
+| **Shop（商店 / 子弹摊位）** | 竞技场中**一个固定位置的物理摊位（Station）**，不是菜单。玩家**走入**其触发区时**游戏暂停**并打开购买 UI（按 `gold_cost_per_bullet` 加 `reserve`），离开恢复。金币消费**不限于间歇**，可随时（含波次中）走入购买。与升级卡（XP 即时暂停）是两套独立暂停点。见 [ADR 013](file:///g:/work/Starter-Kit-FPS/docs/adr/013-shop-as-physical-station.md)。 |
+| **XP / Experience（经验）** | 击杀掉落的成长资源，累积达阈值后触发**升级（Level Up）**。采用三选一升级卡模型，见 [ADR 011](file:///g:/work/Starter-Kit-FPS/docs/adr/011-level-up-three-choice-cards.md)。 |
+| **Level Up（升级）** | XP 累积跨越阈值时触发的成长事件。触发时机：**XP 跨阈值即时暂停**弹三选一卡（本会话 Q5 定为即时暂停，非延迟到间歇）。**升级阈值随等级递增**：第 1 级需 20 XP，之后每级 ×1.3（20→26→34→44…）。每次升级从**升级池**随机抽取 3 个不重复增益呈现给玩家、**选 1 个**立即生效（本局内永久）。 |
+| **Upgrade Pool（升级池）** | 升级增益的定义集合，每项含 `id` / 描述 / 生效参数（作用于 `health`、`shield`、`damage`、`move_speed`、`reload`、`reserve` 等现有属性）。升级时从中随机抽 3 个不重复项。 |
+| **Upgrade Card（升级卡）** | 一次升级中呈现给玩家的单个增益选项（从升级池抽取）。玩家每级选 1 张。 |
+| **Health Pack（血包）** | 怪物死亡**小概率**掉落的 consumable，拾取后恢复**血量（Health）**。是血量（非护盾）的唯一恢复手段——护盾靠自动恢复，不靠血包。 |
+| **Shield（护盾）** | 玩家前的可再生吸收层，**位于血量之前吸收伤害**：一次伤害先扣护盾，溢出部分才扣血量；护盾在"最后一次受击后 `shield_regen_delay` 秒"开始以 `shield_regen_rate` 自动恢复（战斗中亦可回，不只间歇）。初值：`shield_max = 50`、`shield_regen_delay = 3s`、`shield_regen_rate = 10/s`（均可调）。见 [ADR 010](file:///g:/work/Starter-Kit-FPS/docs/adr/010-shield-absorbs-before-health.md)。 |
+| **Health（血量）** | 玩家底层生命值（`player.gd` 已有 `health: int = 100`）。被护盾吸收后的溢出伤害扣减血量；**不自动恢复**，仅由血包恢复；归零即本局结束（护盾归零不致死）。见 [ADR 010](file:///g:/work/Starter-Kit-FPS/docs/adr/010-shield-absorbs-before-health.md)。 |
+| **Game Over（游戏结束）** | 玩家 `health <= 0` 时本局结束：冻结游戏 → 显示结算界面（存活波数、击杀数、累计金币、达到等级等）→ 提供"重开一局"。取代原 `reload_current_scene()` 的**裸**重置（即"无界面、无反馈"地直接 reload），改为"先显示界面、玩家点重开后再 reload"。重开即全新本局、状态全重置。**累计金币**=本局总赚取（`gold_earned_total`，花掉的也算），非当前余额。见 [ADR 014](file:///g:/work/Starter-Kit-FPS/docs/adr/014-death-game-over-screen.md)。 |
+| **RunDirector（运行编排器）** | 竞技场运行的最高层 seam（新增 `Main` 子节点 + `run_director.gd`）。持有本局状态（`gold` / `xp` / `level` / `wave` / `kills` / `gold_earned_total` / `rng`），负责波次推进、刷怪、清场检测、奖励结算、升级触发、游戏结束。暴露信号：`wave_started` / `wave_cleared(wave_number, cleared_by_timeout)` / `gold_changed` / `xp_changed` / `level_up_offered` / `kills_changed` / `game_over(stats)`。为 `PROCESS_MODE_PAUSABLE`（见 Pause Semantics）。 |
+| **Spawn Point（出生点）** | 竞技场四周预定义的 `Marker3D`（≥ 8 个，挂 `Main/SpawnPoints` 下）。RunDirector 刷怪时打乱出生点顺序依次取用，需求 > 出生点数时循环 + ±2m 随机抖动避免重叠。取代现 `main.tscn` 中 `Monsters` 节点下的 4 个手放实例（移除）。 |
+| **monster_type（怪物类型标识）** | 每个怪物脚本顶部 `const MONSTER_TYPE: StringName` 硬编码的类型标识（**不**用 `@export`，避免漏配）。取值与脚本/场景基名一致：`&"monster_melee"` / `&"monster_ranged"` / `&"enemy"`。怪物 `destroy()` 中 `died(monster_type)` 信号携带此值，RunDirector 按此查奖励表。 |
+| **died（死亡信号）** | 三种怪物新增的 `signal died(monster_type: StringName)`，于 `destroy()` 内、`queue_free()` 前（含延迟 `queue_free()` 分支）发射。RunDirector 监听以结算奖励、递减 `alive_count`、计数 `kills`。**不**用 `get_child_count()` 检测清场（死亡动画期间怪物仍在树上会误判）。 |
+| **alive_count（存活计数）** | RunDirector 维护的本波存活怪物计数。每刷一只 `+= 1`，每收一个 `died` 信号 `-= 1`。归零即该波清场、进入 Intermission。 |
+| **Wave Timeout（波次超时兜底）** | 防卡怪软锁的安全网：波开始 `wave_timeout`（初值 120s，`@export`）后仍未清场，RunDirector 对剩余存活怪物**强制 `destroy()`**（正常结算奖励与 `died` 信号），`wave_cleared` 信号带 `cleared_by_timeout: bool` 标志。 |
+| **Health Pack（血包）** | 怪物死亡 10% 概率掉落的 consumable（新建 `health_pack.tscn` Area3D + `health_pack.gd`）。**heal_amount = 25**（`@export`，恢复血量，不影响护盾）。在怪物死亡位置生成（飞行敌人死亡时 RayCast 投影到地面）。`Area3D.body_entered` 检测 `"player"` 组 → 调用 `player.heal(amount)`。**despawn_time = 15s** 后自动 `queue_free()`（最后 3s 闪烁提示）。`PROCESS_MODE_PAUSABLE`（暂停期间计时冻结）。血量（非护盾）的唯一恢复手段。 |
+| **Player.heal(amount)** | `Player` 新增方法：`health = min(health + amount, max_health)`，发 `health_updated` 信号。**不**改护盾、**不**触发 damage 管线。供血包拾取调用。 |
+| **max_health（最大血量）** | `Player` 新增 `@export var max_health: int = 100`（现 `health: int = 100` 无上限字段）。`heal` 与升级 `+20 最大血量` 均受此上限约束。 |
+| **Pause Semantics（暂停语义）** | 三处暂停源（Shop walk-in / Level Up XP 跨阈值 / Game Over 死亡）统一用 `get_tree().paused = true` + `process_mode` 分层：暂停态 UI（Shop/LevelUp/GameOver）为 `PROCESS_MODE_WHEN_PAUSED`，Player/Monsters/弹体/血包/HUD/RunDirector 为 `PROCESS_MODE_PAUSABLE`（默认）。进入暂停时 `Input.set_mouse_mode(MOUSE_MODE_VISIBLE)`，退出 `MOUSE_MODE_CAPTURED`。护盾 regen 计时器随 Player 暂停冻结（商店里不回盾）。暂停源互斥：RunDirector 触发前检查 `get_tree().paused`，已暂停则不叠加（死亡优先级最高，会接管并隐藏其它暂停 UI）。见 [ADR 015](file:///g:/work/Starter-Kit-FPS/docs/adr/015-pause-semantics.md)。 |
+| **Upgrade Stacking（升级叠加语义）** | 升级**可重复选、可叠加**（不同级升级可拿同一项）。**加法类**（`+20 最大血量` / `+5 护盾恢复速率` / `+0.5 移动速度` / `+1 每把枪备弹上限`）线性叠加；**乘法类**（`+15% 伤害` / `-10% 换弹时间`）乘法叠加（×1.15³ / ×0.9³）。`+20 最大血量` 同步回 20 血；`+5 护盾恢复速率` 不立即回盾。"3 个不重复"指本次三张互不相同，不跨级记忆。 |
+| **Player Upgrade Bonus Fields（玩家升级 bonus 字段）** | 升级修改的是 **Player 实例的运行时 bonus 字段**，**不修改 `Weapon` 资源**（`.tres` 全局共享引用，直接改会跨局污染且可能写盘）。字段：`max_health` / `bonus_max_reserve`（有效备弹上限 = `weapon.max_reserve + bonus_max_reserve`）/ `damage_multiplier`（实际伤害 = `weapon.damage × damage_multiplier`）/ `reload_time_multiplier` / `move_speed_bonus` / `shield_regen_rate_bonus`。随场景重置自然清零（配合 `reload_current_scene()` 重开机制，无需手动 reset）。 |
+| **RNG（可注入种子随机数）** | RunDirector 持有 `@export var rng_seed: int = 0`（0 = 随机）+ `var rng: RandomNumberGenerator`，`_ready()` 初始化。供血包掉率（issue 03）、升级抽卡（issue 05）等概率逻辑使用，测试时可注入固定种子断言分布。 |
 
 

@@ -8,7 +8,7 @@ path="res://.godot/imported/grass.glb-0ce858eae1c69c894a569863f13e24f1.scn"
 
 [deps]
 
-source_file="res://models/grass.glb"
+source_file="res://city-builder/models/grass.glb"
 dest_files=["res://.godot/imported/grass.glb-0ce858eae1c69c894a569863f13e24f1.scn"]
 
 [params]

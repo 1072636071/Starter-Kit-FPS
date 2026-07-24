@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 Blocked by: 无
 
 # T1 — 导入剑模型并建近战视图模型场景
@@ -25,12 +25,19 @@ Blocked by: 无
 
 ## 验收标准
 
-- [ ] 剑 GLB 已置于 `models/quaternius_swords.glb` 并完成导入（生成 `.import` 文件）
-- [ ] 新建 `objects/melee_viewmodel.tscn`，根为 `Node3D`，内部引用所选剑网格 `MeshInstance3D`
-- [ ] 视图模型下所有 `MeshInstance3D` 的 `layers` 设为 2（仅武器相机可见）
-- [ ] 预设合理的 `position`/`rotation_degrees`，使剑在右下持握观感正确
-- [ ] 该场景作为 `PackedScene` 可被 `player.gd` 以 `@export var melee_viewmodel: PackedScene` 引用
-- [ ] 不修改任何现有武器模型或 `weapon.gd`
+- [x] 剑 GLB 已置于 `models/quaternius_swords.glb` 并完成导入（生成 `.import` 文件）
+- [x] 新建 `objects/melee_viewmodel.tscn`，根为 `Node3D`，内部引用所选剑网格 `MeshInstance3D`
+- [x] 视图模型下所有 `MeshInstance3D` 的 `layers` 设为 2（仅武器相机可见）——由 player.gd `_ready()` 中 `find_children("*", "MeshInstance3D")` 动态设置
+- [x] 预设合理的 `position`/`rotation_degrees`，使剑在右下持握观感正确
+- [x] 该场景作为 `PackedScene` 可被 `player.gd` 以 `@export var melee_viewmodel: PackedScene` 引用
+- [x] 不修改任何现有武器模型或 `weapon.gd`
+
+## 完成备注
+
+- GLB 模型 `quaternius_swords.glb` 已从 `G:\work\游戏蔬菜\3d素材\poly_pizza\` 复制到 `models/`，Godot 编辑器自动导入
+- GLB 结构：`RootNode` → `UI_Swords`（单一合并网格，含所有剑变体）
+- 场景通过 `ext_resource` 引用 GLB PackedScene（UID `uid://hirfcp144xio`），作为 `MeleeViewmodel` 的子节点
+- layers=2 由 player.gd 运行时设置，不在场景中硬编码
 
 ## 评论
 

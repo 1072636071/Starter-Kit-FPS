@@ -30,9 +30,3 @@ one_shot = true
 [node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
 path_desired_distance = 0.5
 target_desired_distance = 0.5
-
-[node name="HitArea" type="Area3D" parent="."]
-
-[node name="HitShape" type="CollisionShape3D" parent="HitArea"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
-shape = SubResource("CapsuleShape3D_melee")

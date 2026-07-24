@@ -8,6 +8,12 @@ extends CharacterBody3D
 @export_subgroup("Weapons")
 @export var weapons: Array[Weapon] = []
 
+@export_subgroup("Melee")
+@export var melee_damage: float = 40.0
+@export var melee_cooldown: float = 0.5
+@export var melee_reach: float = 2.0
+@export var melee_viewmodel: PackedScene
+
 var weapon: Weapon
 var weapon_index := 0
 
@@ -21,6 +27,20 @@ var is_reloading := false
 var reload_index := -1 # 当前正在换弹的武器索引（通常等于 weapon_index）
 var reload_time_remaining := 0.0
 var reload_tween: Tween # T5：换弹期间武器模型的 Tween
+
+# 近战状态（参见 ADR 006 与 CONTEXT.md「近战系统」）
+# viewmodel 实例化一次、挂 CameraItem 下复用；冷却用浮点累加器；命中区由 T4 接入
+var melee_viewmodel_instance: Node3D
+var melee_cooldown_remaining := 0.0
+var melee_swing_tween: Tween
+const SWING_DURATION := 0.4 # 总挥砍时长，必须 ≤ melee_cooldown
+const ACTIVE_START := 0.1   # monitoring 开启时机（前摇结束）
+const ACTIVE_END := 0.3     # monitoring 关闭时机（后摇开始）
+# 下劈动画相对锚点的偏移：前摇举到右上，活跃帧 = -2× 偏移划到左下形成下劈弧线
+const WINDUP_ROT := Vector3(-60, 30, 60)
+const WINDUP_POS := Vector3(0.2, 0.2, 0.0)
+# 当前挥砍已结算的敌人集合（每次挥砍重置），用实例 id 去重
+var melee_hit_targets: Dictionary = {}
 
 var mouse_sensitivity = 700
 var gamepad_sensitivity := 0.075
@@ -60,6 +80,8 @@ signal reload_ended(weapon_index: int, cancelled: bool)
 @onready var camera = $Head/Camera
 @onready var muzzle = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Muzzle
 @onready var container = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Container
+@onready var camera_item = $Head/Camera/SubViewportContainer/SubViewport/CameraItem
+@onready var melee_hitbox: Area3D = $MeleeHitbox
 @onready var sound_footsteps = $SoundFootsteps
 @onready var blaster_cooldown = $Cooldown
 
@@ -81,58 +103,84 @@ func _ready():
 	initiate_change_weapon(weapon_index)
 	_emit_ammo_updated()
 
-func _process(delta):
-	if not is_inside_tree(): return # 场景重载/节点离树时跳过所有逻辑
-	
-	# Handle functions
-	handle_controls(delta)
+	# 近战视图模型：实例化一次，挂 CameraItem 下（与 Container 平级，不在 Container 内
+	# 否则会被 change_weapon() 的 remove_child() 清掉）。初始隐藏。
+	# 参见 ADR 006 后续决策「Viewmodel 生命周期」与 CONTEXT.md 同名术语条目。
+	if melee_viewmodel:
+		melee_viewmodel_instance = melee_viewmodel.instantiate()
+		camera_item.add_child(melee_viewmodel_instance)
+		melee_viewmodel_instance.visible = false
+		# 与 change_weapon() 中枪械模型一致：仅武器相机可见（layer 2）
+		for child in melee_viewmodel_instance.find_children("*", "MeshInstance3D"):
+			child.layers = 2
+
+	# 命中区深度跟随 melee_reach（@export，可 inspector 调参，见 PRD/CONTEXT「Melee Tuning」）
+	# 复制 BoxShape3D 避免改写场景内联 sub-resource
+	var hit_shape := melee_hitbox.get_node_or_null("HitShape")
+	if hit_shape and hit_shape.shape is BoxShape3D:
+		var box := (hit_shape.shape as BoxShape3D).duplicate()
+		box.size.z = melee_reach
+		hit_shape.shape = box
+
+# 物理处理：移动、重力、碰撞 —— 必须在固定物理 tick 中运行
+func _physics_process(delta):
+	if not is_inside_tree(): return
+
 	handle_gravity(delta)
-	
-	# Movement
-	
-	var applied_velocity: Vector3
-	
-	movement_velocity = transform.basis * movement_velocity # Move forward
-	
-	applied_velocity = velocity.lerp(movement_velocity, delta * 10)
-	applied_velocity.y = - gravity
+
+	# Movement: 将局部输入方向转为世界方向
+	movement_velocity = transform.basis * movement_velocity
+
+	# 帧率无关的平滑加速（用 exp 衰减替代 delta * 10）
+	var applied_velocity: Vector3 = velocity.lerp(movement_velocity, 1.0 - exp(-10.0 * delta))
+	applied_velocity.y = -gravity
 
 	velocity = applied_velocity
-	_try_auto_step() # 在 move_and_slide 之前尝试自动登高 ≤ step_height 的台阶
+	# Auto-Step：在 move_and_slide 之前用 test_move 检测前方台阶并抬升
+	_try_auto_step(delta)
 	move_and_slide()
-	
-	# Rotation 
-	container.position = lerp(container.position, container_offset - (basis.inverse() * applied_velocity / 30), delta * 10)
-	
-	# Movement sound
-	
+
+func _process(delta):
+	if not is_inside_tree(): return
+
+	# 输入处理（每渲染帧读取，保证响应灵敏）
+	handle_controls(delta)
+
+	# 武器模型位置（帧率无关 lerp）
+	container.position = lerp(container.position, container_offset - (basis.inverse() * velocity / 30), 1.0 - exp(-10.0 * delta))
+
+	# 脚步声
 	sound_footsteps.stream_paused = true
-	
 	if is_on_floor():
 		if abs(velocity.x) > 1 or abs(velocity.z) > 1:
 			sound_footsteps.stream_paused = false
-	
-	# ADS FOV transition (frame-independent linear interpolation)
+
+	# ADS FOV 过渡
 	if is_aiming:
 		camera.fov = move_toward(camera.fov, AIM_FOV, delta * 150.0)
 	else:
 		camera.fov = move_toward(camera.fov, DEFAULT_FOV, delta * 150.0)
-	
-	# Landing after jump or falling
-	
-	camera.position.y = lerp(camera.position.y, 0.0, delta * 5)
-	
-	if is_on_floor() and gravity > 1 and !previously_floored: # Landed
+
+	# 落地相机回弹（帧率无关 lerp）
+	camera.position.y = lerp(camera.position.y, 0.0, 1.0 - exp(-5.0 * delta))
+
+	if is_on_floor() and gravity > 1 and !previously_floored:
 		Audio.play("sounds/land.ogg")
 		camera.position.y = -0.1
-	
+
 	previously_floored = is_on_floor()
 
-	# 换弹计时：在 _process 中累加，归零时完成转移 reserve→magazine
+	# 换弹计时
 	_step_reload(delta)
 
-	# Falling/respawning
+	# 近战冷却推进
+	if melee_cooldown_remaining > 0.0:
+		melee_cooldown_remaining = maxf(0.0, melee_cooldown_remaining - delta)
 
+	# 近战命中结算
+	_melee_process_hits()
+
+	# 坠落检测
 	if position.y < -10:
 		get_tree().reload_current_scene()
 
@@ -143,60 +191,42 @@ func _emit_ammo_updated() -> void:
 
 # Auto-Step：在地面+水平移动时，自动登高 ≤ step_height 的台阶。
 #
-# 实现：从角色脚上方 step_height 处朝前下方 cast，命中点即为前方台阶顶。
-# 抬升量必须严格小于 step_height，否则视为 Wall 不抬升。
-# 抬升前检查头顶净空，避免在低矮通道里撞头。
+# 使用 test_move（完整碰撞形状）而非 intersect_ray，精确检测前方台阶顶面。
+# 在 move_and_slide 之前抬升，使 move_and_slide 的碰撞响应不再碰到台阶垂直面。
+# 参考社区经典实现：https://dresswithpockets.github.io/2025/03/19/godot-stair-stepping.html
 #
 # 参见 ADR 003 与 CONTEXT.md "Auto-Step" 术语条目。
 
-func _try_auto_step() -> void:
+func _try_auto_step(delta: float) -> void:
 	if not is_on_floor():
 		return
 
-	var horiz_dir := Vector3(movement_velocity.x, 0.0, movement_velocity.z)
-	if horiz_dir.length() < 0.5:
-		return
-	var direction := horiz_dir.normalized()
-
-	var collider := $Collider as CollisionShape3D
-	if collider == null:
-		return
-	var shape := collider.shape as CapsuleShape3D
-	if shape == null:
-		return
-	var capsule_half_height := shape.height * 0.5 + shape.radius
-	var foot_global := collider.global_position + Vector3(0.0, -capsule_half_height, 0.0)
-
-	var step := StepConstants.STEP_HEIGHT
-	var forward_distance := 0.4 # 略大于 capsule radius(0.3)，确保 ray 越过当前 capsule
-	var epsilon := 0.02
-
-	# 前方 step 检测：从脚上方 step 高度处朝前下方 cast
-	var ray_start := foot_global + Vector3(0.0, step, 0.0) + direction * forward_distance
-	var ray_end := ray_start + Vector3(0.0, -step - epsilon, 0.0)
-
-	var space_state := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
-	query.exclude = [get_rid()]
-	var result := space_state.intersect_ray(query)
-
-	if result.is_empty():
+	var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
+	if horiz_vel.length() < 0.5:
 		return
 
-	var step_up: float = result.position.y - foot_global.y
-	# 抬升量必须在 (0, step_height) 区间，否则视为同高度或 Wall
-	if step_up <= epsilon or step_up >= step:
-		return
+	var max_step := StepConstants.STEP_HEIGHT
 
-	# 头顶净空检查：从 capsule 顶部向上 cast step_up + epsilon
-	var head_global := collider.global_position + Vector3(0.0, capsule_half_height, 0.0)
-	var head_query := PhysicsRayQueryParameters3D.create(
-		head_global,
-		head_global + Vector3(0.0, step_up + epsilon, 0.0)
+	# 测试位置：当前位置 + 水平移动量 + 抬高 max_step
+	var sweep_transform := global_transform.translated(
+		horiz_vel * delta + Vector3(0.0, max_step, 0.0)
 	)
-	head_query.exclude = [get_rid()]
-	if not space_state.intersect_ray(head_query).is_empty():
-		return # 头顶有障碍，不抬升
+	var down_motion := Vector3(0.0, -max_step, 0.0)
+	var result := KinematicCollision3D.new()
+
+	var hit := test_move(sweep_transform, down_motion, result)
+
+	if not hit:
+		return # 前方无地面，不抬升
+
+	# 命中点高度 - (原高度 + max_step) = -travel.y，travel 是向下移动量
+	# step_height = max_step - |travel.y| = max_step + travel.y
+	var travel_y := result.get_travel().y # 负值（向下）
+	var step_up := max_step + travel_y
+
+	# 抬升量必须在 (0, max_step) 区间
+	if step_up <= 0.01 or step_up >= max_step:
+		return
 
 	global_position.y += step_up
 
@@ -244,6 +274,10 @@ func handle_controls(delta):
 	# Reload (manual via R 键)
 	if Input.is_action_just_pressed("reload"):
 		action_reload(weapon_index)
+
+	# Melee (V 键) —— 独立近战入口，与换弹/射击互不阻塞（见 ADR 006）
+	if Input.is_action_just_pressed("melee"):
+		action_melee()
 
 	# Jumping
 
@@ -469,6 +503,83 @@ func _reset_reload_state(cancelled: bool) -> void:
 		reload_ended.emit(idx, cancelled)
 		if not cancelled:
 			_emit_ammo_updated()
+
+# === 近战系统（T3 + T4）===
+# 独立于 weapons/magazine/reserve；与换弹/射击互不阻塞（见 ADR 006）
+# 视觉：下劈（剑从右上→左下）；命中区：前方 Area3D，仅活跃帧 monitoring
+# 调参初版：melee_damage=40、melee_cooldown=0.5s、reach=2.0m、宽高≈1.5m
+
+func action_melee() -> void:
+	# 冷却中：拒绝触发（不查 is_reloading——近战与换弹互不阻塞）
+	if melee_cooldown_remaining > 0.0:
+		return
+	if melee_viewmodel_instance == null:
+		return
+
+	melee_cooldown_remaining = melee_cooldown
+
+	# 显示 viewmodel
+	melee_viewmodel_instance.visible = true
+
+	# 杀掉旧 Tween（防连续挥砍叠加）
+	if melee_swing_tween and melee_swing_tween.is_valid():
+		melee_swing_tween.kill()
+
+	# 下劈动画：剑从右上→左下，分三段对应前摇/活跃帧/后摇
+	# 同时 tween rotation_degrees 与 position（见 CONTEXT.md「Swing Animation Style」）
+	# 注：to_val 在 tween_property 调用时求值（非 step 启动时），故三步均以 start_* 为基准
+	var tween := get_tree().create_tween()
+	melee_swing_tween = tween
+	var start_rotation := melee_viewmodel_instance.rotation_degrees
+	var start_position := melee_viewmodel_instance.position
+
+	# 前摇 0.1s：从锚点举到右上（蓄力）
+	tween.tween_property(melee_viewmodel_instance, "rotation_degrees", start_rotation + WINDUP_ROT, 0.1)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", start_position + WINDUP_POS, 0.1)
+	# 活跃帧 0.2s：从右上划到左下（target = start - 2× WINDUP 形成下劈弧线）
+	tween.tween_property(melee_viewmodel_instance, "rotation_degrees", start_rotation - WINDUP_ROT * 2, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", start_position - WINDUP_POS * 2, 0.2)
+	# 后摇 0.1s：复位
+	tween.tween_property(melee_viewmodel_instance, "rotation_degrees", start_rotation, 0.1)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", start_position, 0.1)
+	# 收尾：隐藏
+	tween.tween_callback(func(): melee_viewmodel_instance.visible = false)
+
+	# 命中区 monitoring 切换：用 create_timer 与挥砍 Tween 解耦
+	# 理由：若用 tween_callback，挥砍 Tween 被 kill（连续挥砍）时回调不触发，monitoring 可能滞留
+	# 参见 CONTEXT.md「Active Frames」对该实现的说明
+	melee_hit_targets.clear()
+	melee_hitbox.monitoring = false # 保险：先关再开
+
+	# 前摇结束 → 开启 monitoring（活跃帧开始）
+	get_tree().create_timer(ACTIVE_START).timeout.connect(func():
+		if is_inside_tree():
+			melee_hitbox.monitoring = true
+	)
+	# 后摇开始 → 关闭 monitoring（活跃帧结束）
+	get_tree().create_timer(ACTIVE_END).timeout.connect(func():
+		melee_hitbox.monitoring = false
+	)
+
+# 每帧检查命中区重叠体，按 has_method("damage") 过滤并去重结算
+# 墙体 StaticBody3D 无 damage() 自然被跳过（接受薄墙穿墙边缘情况，见 CONTEXT.md）
+func _melee_process_hits() -> void:
+	if not melee_hitbox or not melee_hitbox.monitoring:
+		return
+	var bodies := melee_hitbox.get_overlapping_bodies()
+	for body in bodies:
+		if not is_instance_valid(body):
+			continue
+		# 排除玩家自身（MeleeHitbox 挂在 Player 根下，会检测到自己的 CharacterBody3D）
+		if body == self:
+			continue
+		if not body.has_method("damage"):
+			continue
+		var id := body.get_instance_id()
+		if melee_hit_targets.has(id):
+			continue # 本次挥砍已结算过，跳过
+		melee_hit_targets[id] = true
+		body.damage(melee_damage) # 自动触发 HitFeedback.flash，见 ADR 005
 
 func damage(amount):
 	health -= amount

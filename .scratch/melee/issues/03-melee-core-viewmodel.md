@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 Blocked by: 01, 02
 
 # T3 — 近战核心逻辑 + 视图模型挥砍动画
@@ -117,16 +117,16 @@ func action_melee() -> void:
 
 ## 验收标准
 
-- [ ] `player.gd` 新增 `@export var melee_damage = 40`、`@export var melee_cooldown = 0.5`、`@export var melee_viewmodel: PackedScene`
-- [ ] 新增 `@onready var camera_item`，`_ready()` 中实例化 `melee_viewmodel` 一次并挂 `CameraItem` 下，初始 `visible = false`，所有 mesh `layers = 2`
-- [ ] 新增 `melee_cooldown_remaining` 浮点累加器，在 `_process(delta)` 递减
-- [ ] 按 V（`melee` 动作）触发 `action_melee()`：显示 viewmodel → Tween 下劈（前摇 0.1s 举右上 → 活跃帧 0.2s 划左下 → 后摇 0.1s 复位）→ 隐藏
-- [ ] 冷却中（0.5s 内）重复按 V 不重复触发，冷却结束方可再次挥砍
-- [ ] 挥砍动画**不**改动 `container` 内枪械模型的位置/可见性
-- [ ] **不**修改 `Weapon` 资源、`action_shoot()`、弹药/换弹逻辑
-- [ ] 换弹中按 V 可正常触发挥砍（近战-换弹互不阻塞）
-- [ ] 挥砍中按 R 可正常触发换弹
-- [ ] 不新增 Timer 节点到 `player.tscn`
+- [x] `player.gd` 新增 `@export var melee_damage = 40`、`@export var melee_cooldown = 0.5`、`@export var melee_viewmodel: PackedScene`
+- [x] 新增 `@onready var camera_item`，`_ready()` 中实例化 `melee_viewmodel` 一次并挂 `CameraItem` 下，初始 `visible = false`，所有 mesh `layers = 2`
+- [x] 新增 `melee_cooldown_remaining` 浮点累加器，在 `_process(delta)` 递减
+- [x] 按 V（`melee` 动作）触发 `action_melee()`：显示 viewmodel → Tween 下劈（前摇 0.1s 举右上 → 活跃帧 0.2s 划左下 → 后摇 0.1s 复位）→ 隐藏
+- [x] 冷却中（0.5s 内）重复按 V 不重复触发，冷却结束方可再次挥砍
+- [x] 挥砍动画**不**改动 `container` 内枪械模型的位置/可见性
+- [x] **不**修改 `Weapon` 资源、`action_shoot()`、弹药/换弹逻辑
+- [x] 换弹中按 V 可正常触发挥砍（近战-换弹互不阻塞）
+- [x] 挥砍中按 R 可正常触发换弹
+- [x] 不新增 Timer 节点到 `player.tscn`
 
 ## 评论
 

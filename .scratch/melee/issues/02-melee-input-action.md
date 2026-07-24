@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 Blocked by: 无
 
 # T2 — 注册 `melee` 输入动作（V 键）
@@ -21,10 +21,10 @@ melee={
 
 ## 验收标准
 
-- [ ] `project.godot` 的 `[input]` 段出现 `"melee"` 输入动作定义
-- [ ] 默认事件为 V 键（`physical_keycode = 86`，`unicode = 118`，无修饰键）
-- [ ] 现有 `shoot`/`aim`/`reload`/`weapon_toggle`/`jump`/`move_*`/`camera_*`/`mouse_capture*` 等动作**不被改动**
-- [ ] 在编辑器中按 V 可触发 `Input.is_action_just_pressed("melee")`
+- [x] `project.godot` 的 `[input]` 段出现 `"melee"` 输入动作定义
+- [x] 默认事件为 V 键（`physical_keycode = 86`，`unicode = 118`，无修饰键）
+- [x] 现有 `shoot`/`aim`/`reload`/`weapon_toggle`/`jump`/`move_*`/`camera_*`/`mouse_capture*` 等动作**不被改动**
+- [x] 在编辑器中按 V 可触发 `Input.is_action_just_pressed("melee")`
 
 ## 评论
 
