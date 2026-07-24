@@ -213,33 +213,43 @@ shape = SubResource("BoxShape3D_wall_side")
 
 [node name="Monsters" type="Node3D" parent="."]
 
-; issue 02：出生点——沿竞技场四周布置 8 个 Marker3D（避开玩家出生点 origin 与未来商店摊位）。
-; 怪物在 Marker3D.global_position 处 instantiate 加入 Monsters；需求 > 出生点数时循环+±2m 抖动。
+; issue 02/04：出生点——沿城市边缘道路和四角布置 8 个 Marker3D。
+; 全部位于道路 cell（structure 0/4），y=0.5 避免卡地板。
+; 坐标由 cell(cx,cz) → world(cx*4+2, 0.5, cz*4+2) 计算。
+; SP1-4: 边缘道路中段; SP5-8: 四角交叉口（road x/y=±15）。
 [node name="SpawnPoints" type="Node3D" parent="."]
 
+; North edge — cell(3,-15) horizontal road y=-15
 [node name="SP1" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 0.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0.5, -58)
 
+; South edge — cell(-7,15) horizontal road y=15
 [node name="SP2" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -50, 0.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26, 0.5, 62)
 
+; East edge — cell(15,7) vertical road x=15
 [node name="SP3" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 50)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 62, 0.5, 30)
 
+; West edge — cell(-15,-3) vertical road x=-15
 [node name="SP4" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, -50)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -58, 0.5, -10)
 
+; NE corner — cell(15,-15) intersection
 [node name="SP5" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.5, 40)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 62, 0.5, -58)
 
+; NW corner — cell(-15,-15) intersection
 [node name="SP6" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.5, 40)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -58, 0.5, -58)
 
+; SE corner — cell(15,15) intersection
 [node name="SP7" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.5, -40)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 62, 0.5, 62)
 
+; SW corner — cell(-15,15) intersection
 [node name="SP8" type="Marker3D" parent="SpawnPoints"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.5, -40)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -58, 0.5, 62)
 
 ; issue 02：RunDirector——竞技场运行编排器，挂在 Main 下（Monsters 的兄弟节点）。
 ; _ready() 自动收集 SpawnPoints 与 Monsters；监听 player.died → game_over。
@@ -247,12 +257,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.5, -40)
 script = ExtResource("16_director")
 chest_scene = ExtResource("22_chest")
 
-; issue 04：子弹商店摊位——固定物理位置（竞技场东南角，避开出生点 SP5=40,40）。
+; issue 04：子弹商店摊位——位于中央广场东侧道路 cell(4,0)，水平路 y=0。
+; 世界坐标 (18, 1.5, 2)，玩家从出生点（原点/广场中心）向东步行即达。
 ; Area3D 触发区（3×3×3）+ 发光柱可视化（layer 1，主相机 + 小地图皆可见作地标）。
 ; 玩家走入 → body_entered → 暂停 + 打开 HUD/ShopUI；ESC/关闭/走出 → 恢复。
 ; ShopStation._ready() 通过 group "shop_ui" 查找 HUD/ShopUI、group "run_director" 查找 RunDirector。
 [node name="ShopStation" parent="." instance=ExtResource("18_shop")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 1.5, 60)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 1.5, 2)
 
 [connection signal="health_updated" from="Player" to="HUD" method="_on_health_updated"]
 [connection signal="shield_updated" from="Player" to="HUD" method="_on_shield_updated"]
