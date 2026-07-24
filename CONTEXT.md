@@ -179,4 +179,13 @@
 | **start_wave / interact（输入动作）** | RunDirector 新增 `start_wave` 输入动作（建议绑定 Enter 或 F 键）用于手动开下一波；宝箱交互复用现有 `interact` 输入动作（E 键）。两键分离避免冲突——开下一波与开宝箱是两个独立动作，玩家可不开宝箱直接开下一波。 |
 | **RunDirector Public Methods（RunDirector public 方法）** | RunDirector 暴露给 issue 04（商店）/ 08（宝箱）/ 03（击杀奖励）调用的 public 方法：`add_gold(amount)`（加金币 + 累计 + 发信号）、`spend_gold(cost) -> bool`（扣金币，不足返回 false）、`add_xp(amount)`（加经验，跨阈值内部级联触发 issue 05 升级）、`add_kills(count=1)`（加击杀计数）。这些方法是金币/经验/击杀状态变更的唯一入口，避免 issue 直接改字段漏发信号。 |
 
+## 场景文件约定（Scene File Conventions）
+
+| 约定 | 说明 |
+|------|------|
+| **语义化 UID** | 手动创建的场景使用可读 UID，格式：`b` + 功能缩写 + issue 编号 + 可选后缀。示例：`bshopstation04`（商店/issue 04）、`blevelup05card`（升级卡/issue 05）、`btesthealthpack01`（血包测试/issue 01）。**禁止**让编辑器随机重新生成已有语义 UID——会导致引用方（如 `main.tscn` 的 `ext_resource`）断裂。 |
+| **UID 变更须同步引用** | 若确需变更某场景 UID，必须全项目搜索旧 UID 并同步更新所有 `ext_resource` 引用（`git grep "<旧UID>" -- "*.tscn"`）。 |
+| **load_steps 可省略** | `gd_scene` 头的 `load_steps=N` 为可选元数据，Godot 加载时自动计算。省略不影响功能，编辑器重保存时可能自动移除。 |
+| **测试场景 UID** | 测试场景（`tests/`）同样使用语义 UID：`btest` + 功能名 + issue 编号，如 `btestshop04station`。 |
+
 

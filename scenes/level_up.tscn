@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://blevelup05card"]
+[gd_scene format=3 uid="uid://blevelup05card"]
 
 [ext_resource type="Script" path="res://scripts/level_up.gd" id="1_levelup"]
 
