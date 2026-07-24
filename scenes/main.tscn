@@ -79,7 +79,9 @@ far = 1000.0
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=529470734]
 environment = ExtResource("1_q8fpv")
 
+; 玩家出生点：中央广场人行道 cell(1,1)，远离喷泉 cell(0,0)，四周空旷
 [node name="Player" parent="." unique_id=1938858786 node_paths=PackedStringArray("crosshair") instance=ExtResource("2_elriq") groups=["player"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0, 6)
 crosshair = NodePath("../HUD/Crosshair")
 
 [node name="Sun" type="DirectionalLight3D" parent="." unique_id=1871256661]
