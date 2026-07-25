@@ -10,7 +10,7 @@ extends Control
 ##
 ## 购买逻辑：
 ##   - 武器：空槽→购买；满槽→购买并替换（弹窗选槽位）
-##   - 弹药：ammo_reserve[type] += bundle_amount
+##   - 弹药：backpack_add(type, "ammo", bundle_amount, weight)
 ##   - 手雷：grenades[type] += 1（上限 max_grenades）
 
 signal closed
@@ -19,12 +19,12 @@ signal closed
 # 弹药价格表（ADR 022）
 # ============================================================
 const AMMO_CONFIG: Dictionary = {
-	&"手枪弹": {"bundle_amount": 24, "price": 1, "display": "手枪弹"},
-	&"步枪弹": {"bundle_amount": 20, "price": 2, "display": "步枪弹"},
-	&"霰弹":   {"bundle_amount": 8,  "price": 3, "display": "霰弹"},
-	&"狙击弹": {"bundle_amount": 4,  "price": 4, "display": "狙击弹"},
-	&"能量电池": {"bundle_amount": 12, "price": 3, "display": "能量电池"},
-	&"榴弹":   {"bundle_amount": 2,  "price": 5, "display": "榴弹"},
+	&"手枪弹": {"bundle_amount": 24, "price": 24, "display": "手枪弹"},
+	&"步枪弹": {"bundle_amount": 20, "price": 60, "display": "步枪弹"},
+	&"霰弹":   {"bundle_amount": 8,  "price": 80, "display": "霰弹"},
+	&"狙击弹": {"bundle_amount": 4,  "price": 80, "display": "狙击弹"},
+	&"能量电池": {"bundle_amount": 12, "price": 60, "display": "能量电池"},
+	&"榴弹":   {"bundle_amount": 2,  "price": 100, "display": "榴弹"},
 }
 
 const ALL_AMMO_TYPES: Array[StringName] = [&"手枪弹", &"步枪弹", &"霰弹", &"狙击弹", &"能量电池", &"榴弹"]
@@ -45,8 +45,8 @@ const WEAPON_PREVIEW_ROTATE_SPEED := 0.6  # 弧度/秒，绕 Y 轴慢速旋转
 
 # 手雷价格
 const GRENADE_CONFIG: Dictionary = {
-	&"emp":  {"display": "EMP",  "price": 25},
-	&"frag": {"display": "破片", "price": 20},
+	&"emp":  {"display": "EMP",  "price": 3},
+	&"frag": {"display": "破片", "price": 2},
 }
 
 var _player: Node3D
@@ -96,7 +96,7 @@ func _process(delta: float) -> void:
 		if is_instance_valid(rotator):
 			rotator.rotate_y(WEAPON_PREVIEW_ROTATE_SPEED * delta)
 
-func _on_gold_changed(_amount: int) -> void:
+func _on_currency_changed(_copper: int) -> void:
 	if _open:
 		_refresh_gold_label()
 		_refresh_all_button_states()
@@ -125,9 +125,9 @@ func open(player: Node3D, run_director: Node) -> void:
 	visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-	if _run_director and _run_director.has_signal("gold_changed"):
-		if not _run_director.gold_changed.is_connected(_on_gold_changed):
-			_run_director.gold_changed.connect(_on_gold_changed)
+	if _run_director and _run_director.has_signal("currency_changed"):
+		if not _run_director.currency_changed.is_connected(_on_currency_changed):
+			_run_director.currency_changed.connect(_on_currency_changed)
 
 func close() -> void:
 	if not _open:
@@ -214,7 +214,7 @@ func _build_title() -> Label:
 
 func _build_gold_label() -> Label:
 	var l := Label.new()
-	l.text = "金币: 0"
+	l.text = "🪙 0铜"
 	l.add_theme_font_size_override("font_size", 22)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -230,7 +230,7 @@ func _build_close_button() -> Button:
 
 func _refresh_gold_label() -> void:
 	if _run_director:
-		_gold_label.text = "金币: %d" % _run_director.gold
+		_gold_label.text = "🪙 %s" % _run_director.format_currency()
 
 # ============================================================
 # 三区构建
@@ -301,9 +301,11 @@ func _build_weapon_row(w: Weapon, shop_idx: int) -> HBoxContainer:
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(name_lbl)
 
-	# 价格
+	# 价格（金）
 	var price_lbl := Label.new()
-	price_lbl.text = "%d 金" % w.weapon_cost
+	@warning_ignore("integer_division")
+	var weapon_price_gold: int = w.weapon_cost / 10
+	price_lbl.text = "%d 金" % weapon_price_gold
 	price_lbl.add_theme_font_size_override("font_size", 18)
 	price_lbl.custom_minimum_size = Vector2(60, 0)
 	price_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -478,18 +480,18 @@ func _build_ammo_row(ammo_type: StringName) -> HBoxContainer:
 	bundle_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(bundle_lbl)
 
-	# 价格
+	# 价格（铜）
 	var price_lbl := Label.new()
-	price_lbl.text = "%d 金" % cfg["price"]
+	price_lbl.text = "%d 铜" % cfg["price"]
 	price_lbl.add_theme_font_size_override("font_size", 18)
 	price_lbl.custom_minimum_size = Vector2(50, 0)
 	price_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(price_lbl)
 
-	# 当前储备量
+	# 当前储备量（从备弹槽计算）
 	var reserve_lbl := Label.new()
 	reserve_lbl.name = "AmmoReserveLabel"
-	var current_reserve: int = _player.ammo_reserve.get(ammo_type, 0) if _player else 0
+	var current_reserve: int = _player.get_available_reloads(ammo_type) if _player else 0
 	reserve_lbl.text = "当前: %d" % current_reserve
 	reserve_lbl.add_theme_font_size_override("font_size", 16)
 	reserve_lbl.custom_minimum_size = Vector2(90, 0)
@@ -542,9 +544,9 @@ func _build_grenade_row(grenade_type: StringName) -> HBoxContainer:
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(name_lbl)
 
-	# 价格
+	# 价格（银）
 	var price_lbl := Label.new()
-	price_lbl.text = "%d 金" % cfg["price"]
+	price_lbl.text = "%d 银" % cfg["price"]
 	price_lbl.add_theme_font_size_override("font_size", 18)
 	price_lbl.custom_minimum_size = Vector2(60, 0)
 	price_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -593,15 +595,19 @@ func _buy_weapon(shop_idx: int) -> void:
 		return
 
 	var w: Weapon = _shop_weapons[shop_idx]
+	@warning_ignore("integer_division")
+	var price_copper: int = w.weapon_cost / 10 * 10000  # weapon_cost ÷ 10 为金币数，×10000 转铜
+	@warning_ignore("integer_division")
+	var weapon_price_gold: int = w.weapon_cost / 10
 
-	# 检查金币
-	if _run_director.gold < w.weapon_cost:
-		_show_confirm_dialog("金币不足", "需要 %d 金，当前只有 %d 金。" % [w.weapon_cost, _run_director.gold], false)
+	# 检查货币
+	if _run_director.copper < price_copper:
+		_show_confirm_dialog("金币不足", "需要 %d 金，当前 %s。" % [weapon_price_gold, _run_director.format_currency()], false)
 		return
 
 	# 确认弹窗
-	_show_confirm_dialog("购买武器", "确认购买 %s？\n价格: %d 金" % [w.display_name, w.weapon_cost], true, func():
-		if not _run_director.spend_gold(w.weapon_cost):
+	_show_confirm_dialog("购买武器", "确认购买 %s？\n价格: %d 金" % [w.display_name, weapon_price_gold], true, func():
+		if not _run_director.spend_copper(price_copper):
 			return
 
 		# 找到第一个空槽
@@ -617,9 +623,9 @@ func _buy_weapon(shop_idx: int) -> void:
 		# 添加到玩家武器数组
 		_player.weapons.append(w)
 		_player.weapon_durability.append(w.durability_max)
-		# 确保弹药池有此类型
-		if not _player.ammo_reserve.has(w.ammo_type):
-			_player.ammo_reserve[w.ammo_type] = 36
+		# 送一弹匣量弹药到背包
+		var weight_per_unit: float = _player.ITEM_WEIGHTS.get(w.ammo_type, 0.01)
+		_player.backpack_add(w.ammo_type, &"ammo", w.magazine_size, weight_per_unit)
 		# 通知弹药刷新
 		if _player.has_method("_emit_ammo_updated"):
 			_player._emit_ammo_updated()
@@ -635,10 +641,14 @@ func _show_replace_popup(shop_idx: int) -> void:
 	if shop_idx < 0 or shop_idx >= _shop_weapons.size():
 		return
 	var w: Weapon = _shop_weapons[shop_idx]
+	@warning_ignore("integer_division")
+	var price_copper: int = w.weapon_cost / 10 * 10000
+	@warning_ignore("integer_division")
+	var weapon_price_gold: int = w.weapon_cost / 10
 
-	# 检查金币
-	if _run_director.gold < w.weapon_cost:
-		_show_confirm_dialog("金币不足", "需要 %d 金，当前只有 %d 金。" % [w.weapon_cost, _run_director.gold], false)
+	# 检查货币
+	if _run_director.copper < price_copper:
+		_show_confirm_dialog("金币不足", "需要 %d 金，当前 %s。" % [weapon_price_gold, _run_director.format_currency()], false)
 		return
 
 	_replace_weapon_idx = shop_idx
@@ -664,7 +674,7 @@ func _show_replace_popup(shop_idx: int) -> void:
 	popup.add_child(popup_vbox)
 
 	var popup_title := Label.new()
-	popup_title.text = "选择要替换的武器（购买 %s - %d 金）" % [w.display_name, w.weapon_cost]
+	popup_title.text = "选择要替换的武器（购买 %s - %d 金）" % [w.display_name, weapon_price_gold]
 	popup_title.add_theme_font_size_override("font_size", 20)
 	popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	popup_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -711,18 +721,20 @@ func _confirm_replace(slot_idx: int) -> void:
 		return
 
 	var w: Weapon = _shop_weapons[shop_idx]
+	@warning_ignore("integer_division")
+	var price_copper: int = w.weapon_cost / 10 * 10000
 
-	# 扣金币
-	if not _run_director.spend_gold(w.weapon_cost):
+	# 扣铜币
+	if not _run_director.spend_copper(price_copper):
 		return
 
 	# 替换：旧武器消失，新武器入槽
 	_player.weapons[slot_idx] = w
 	_player.weapon_durability[slot_idx] = w.durability_max
 	_player.magazine[slot_idx] = w.magazine_size
-	# 确保弹药池有此类型
-	if not _player.ammo_reserve.has(w.ammo_type):
-		_player.ammo_reserve[w.ammo_type] = 36
+	# 送一弹匣量弹药到背包
+	var weight_per_unit: float = _player.ITEM_WEIGHTS.get(w.ammo_type, 0.01)
+	_player.backpack_add(w.ammo_type, &"ammo", w.magazine_size, weight_per_unit)
 
 	if _player.has_method("_emit_ammo_updated"):
 		_player._emit_ammo_updated()
@@ -754,15 +766,16 @@ func _buy_ammo(ammo_type: StringName) -> void:
 	var bundle: int = cfg["bundle_amount"]
 	var display: String = cfg["display"]
 
-	if _run_director.gold < price:
-		_show_confirm_dialog("金币不足", "需要 %d 金，当前只有 %d 金。" % [price, _run_director.gold], false)
+	if _run_director.copper < price:
+		_show_confirm_dialog("铜币不足", "需要 %d 铜，当前 %s。" % [price, _run_director.format_currency()], false)
 		return
 
-	_show_confirm_dialog("购买弹药", "确认购买 %s ×%d？\n价格: %d 金" % [display, bundle, price], true, func():
-		if not _run_director.spend_gold(price):
+	_show_confirm_dialog("购买弹药", "确认购买 %s ×%d？\n价格: %d 铜" % [display, bundle, price], true, func():
+		if not _run_director.spend_copper(price):
 			return
-		var current: int = _player.ammo_reserve.get(ammo_type, 0)
-		_player.ammo_reserve[ammo_type] = current + bundle
+		# 弹药添加到背包
+		var weight_per_unit: float = _player.ITEM_WEIGHTS.get(ammo_type, 0.01)
+		_player.backpack_add(ammo_type, &"ammo", bundle, weight_per_unit)
 		if _player.has_method("_emit_ammo_updated"):
 			_player._emit_ammo_updated()
 		# 刷新弹药区的储备量显示
@@ -786,6 +799,7 @@ func _buy_grenade(grenade_type: StringName) -> void:
 		return
 
 	var price: int = cfg["price"]
+	var price_copper := price * 100  # 银转铜
 	var display: String = cfg["display"]
 	var current: int = _player.grenades.get(grenade_type, 0)
 	var max_g: int = _player.max_grenades
@@ -794,12 +808,12 @@ func _buy_grenade(grenade_type: StringName) -> void:
 		_show_confirm_dialog("已满", "%s 已达上限 %d。" % [display, max_g], false)
 		return
 
-	if _run_director.gold < price:
-		_show_confirm_dialog("金币不足", "需要 %d 金，当前只有 %d 金。" % [price, _run_director.gold], false)
+	if _run_director.copper < price_copper:
+		_show_confirm_dialog("银币不足", "需要 %d 银，当前 %s。" % [price, _run_director.format_currency()], false)
 		return
 
-	_show_confirm_dialog("购买手雷", "确认购买 %s？\n价格: %d 金\n持有: %d/%d → %d/%d" % [display, price, current, max_g, current + 1, max_g], true, func():
-		if not _run_director.spend_gold(price):
+	_show_confirm_dialog("购买手雷", "确认购买 %s？\n价格: %d 银\n持有: %d/%d → %d/%d" % [display, price, current, max_g, current + 1, max_g], true, func():
+		if not _run_director.spend_copper(price_copper):
 			return
 		_player.grenades[grenade_type] = current + 1
 		# 刷新手雷区数量标签
@@ -879,8 +893,8 @@ func _show_confirm_dialog(title_text: String, body_text: String, show_confirm: b
 func _refresh_ammo_zone_reserve_labels() -> void:
 	_refresh_zone_labels(_ammo_zone, "AmmoReserveLabel", _shop_ammo_types,
 		AMMO_CONFIG, func(ammo_type: StringName) -> String:
-			var reserve: int = _player.ammo_reserve.get(ammo_type, 0) if _player else 0
-			return "当前: %d" % reserve)
+			var reserve: int = _player.get_available_reloads(ammo_type) if _player else 0
+			return "换弹次数: %d" % reserve)
 
 func _refresh_grenade_zone_count_labels() -> void:
 	_refresh_zone_labels(_grenade_zone, "GrenadeCountLabel", _shop_grenade_types,
@@ -917,35 +931,25 @@ func _refresh_zone_labels(zone: VBoxContainer, target_label_name: String,
 func _refresh_all_button_states() -> void:
 	if _run_director == null or _player == null or not is_instance_valid(_player):
 		return
-	var gold_amount: int = _run_director.gold
+	var copper_amount: int = _run_director.copper
 
 	# 武器区 — 匹配 "BuyWeaponBtn" 或 "ReplaceWeaponBtn"
-	_refresh_zone_buttons(_weapon_zone, func(btn: Button) -> bool:
-		return btn.name == "BuyWeaponBtn" or btn.name == "ReplaceWeaponBtn", gold_amount)
+	_refresh_zone_buttons(_weapon_zone, func(b): return b.name == "BuyWeaponBtn" or b.name == "ReplaceWeaponBtn",
+		copper_amount, "金", 10000)
 
 	# 弹药区 — 匹配 "BuyAmmoBtn"
-	_refresh_zone_buttons(_ammo_zone, func(btn: Button) -> bool:
-		return btn.name == "BuyAmmoBtn", gold_amount)
+	_refresh_zone_buttons(_ammo_zone, func(b): return b.name == "BuyAmmoBtn",
+		copper_amount, "铜", 1)
 
 	# 手雷区 — 匹配 "BuyGrenadeBtn"，且需检查手雷是否已满
-	_refresh_zone_buttons(_grenade_zone, func(btn: Button) -> bool:
-		return btn.name == "BuyGrenadeBtn", gold_amount, func(btn: Button, row: HBoxContainer) -> void:
-			# 额外条件：手雷已达上限则强制禁用
-			for c in row.get_children():
-				if c is Label and c.name != "GrenadeCountLabel" and "金" not in (c as Label).text:
-					for gt in _shop_grenade_types:
-						var cfg: Dictionary = GRENADE_CONFIG.get(gt, {})
-						if cfg.get("display", "") == (c as Label).text:
-							var count: int = _player.grenades.get(gt, 0)
-							if count >= _player.max_grenades:
-								btn.disabled = true
-							return)
+	_refresh_zone_buttons(_grenade_zone, func(b): return b.name == "BuyGrenadeBtn",
+		copper_amount, "银", 100, _grenade_full_check)
 
 ## 通用按钮状态刷新：遍历 zone 中每个 HBoxContainer 行，找到匹配 match_func 的按钮，
-## 解析同行中带"金"的 Label 作为价格，与 gold_amount 比较决定 disabled。
+## 解析同行中带 price_suffix 的 Label 作为价格，× multiplier 转铜后与 copper_amount 比较决定 disabled。
 ## extra_check(btn, row) 可选，用于施加额外禁用条件（如手雷满上限）。
-func _refresh_zone_buttons(zone: VBoxContainer, match_func: Callable, gold_amount: int,
-		extra_check: Callable = Callable()) -> void:
+func _refresh_zone_buttons(zone: VBoxContainer, match_func: Callable, copper_amount: int,
+		price_suffix: String, multiplier: int, extra_check: Callable = Callable()) -> void:
 	if zone == null:
 		return
 	for row in zone.get_children():
@@ -953,17 +957,28 @@ func _refresh_zone_buttons(zone: VBoxContainer, match_func: Callable, gold_amoun
 			continue
 		for child in row.get_children():
 			if child is Button and match_func.call(child):
-				# 从行中找价格标签
 				for c in row.get_children():
-					if c is Label and "金" in c.text:
-						var price_str: String = (c as Label).text.replace(" 金", "").strip_edges()
+					if c is Label and price_suffix in c.text:
+						var price_str: String = (c as Label).text.replace(" " + price_suffix, "").strip_edges()
 						if price_str.is_valid_int():
-							child.disabled = gold_amount < int(price_str)
+							var price_copper := int(price_str) * multiplier
+							child.disabled = copper_amount < price_copper
 						break
-				# 手雷区额外条件
 				if extra_check.is_valid():
 					extra_check.call(child, row)
 				break
+
+## 手雷满上限时额外禁用按钮
+func _grenade_full_check(btn: Button, row: HBoxContainer) -> void:
+	for c in row.get_children():
+		if c is Label and c.name != "GrenadeCountLabel" and "银" not in (c as Label).text:
+			for gt in _shop_grenade_types:
+				var cfg: Dictionary = GRENADE_CONFIG.get(gt, {})
+				if cfg.get("display", "") == (c as Label).text:
+					var count: int = _player.grenades.get(gt, 0)
+					if count >= _player.max_grenades:
+						btn.disabled = true
+					return
 
 # ============================================================
 # 输入：ESC 关闭

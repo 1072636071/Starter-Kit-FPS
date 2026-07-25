@@ -86,9 +86,9 @@ func _on_body_entered(body: Node3D) -> void:
 	body.magazine.append(weapon_resource.magazine_size)
 	body.weapon_durability.append(durability_current if durability_current > 0 else weapon_resource.durability_max)
 
-	# 弹药池初始化（若该类型不存在）
-	if not body.ammo_reserve.has(weapon_resource.ammo_type):
-		body.ammo_reserve[weapon_resource.ammo_type] = body.INITIAL_AMMO_PER_TYPE
+	# 送一弹匣量弹药到背包
+	var weight_per_unit: float = body.ITEM_WEIGHTS.get(weapon_resource.ammo_type, 0.01)
+	body.backpack_add(weapon_resource.ammo_type, &"ammo", weapon_resource.magazine_size, weight_per_unit)
 
 	# 如果是第一把武器，自动装备
 	if player_weapons.size() == 1:

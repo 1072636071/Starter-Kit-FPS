@@ -19,13 +19,13 @@ var _modules: Array[Node] = []
 
 @export var player: Node3D
 @export var move_speed: float = 3.0
-@export var chase_range: float = 25.0
+@export var chase_range: float = 50.0
 @export var attack_damage: float = 10.0
 @export var attack_cooldown: float = 1.5
 @export var health: float = 100.0
 ## 被动感知半径：怪物在 IDLE 态下能直接看到很近的玩家的距离
 ## （不穿墙，用视线检测）。子类覆盖：近战 8m、远程 12m。
-@export var awareness_range: float = 8.0
+@export var awareness_range: float = 16.0
 ## 跳跃高度（m）：怪物能跳上的最大垂直落差。子类覆盖：近战 5m、远程 2m
 @export var jump_height: float = 2.0
 ## 跳跃初速度（由 jump_height 计算，gravity=20.0）
@@ -65,7 +65,7 @@ var path_update_interval: float = 0.3
 var _path_timer_offset: float = 0.0
 
 # 连锁 Aggro：死亡时 emit alert 的传播半径
-const DEATH_ALERT_RADIUS := 20.0
+const DEATH_ALERT_RADIUS := 40.0
 
 # 出生序号（由 RunDirector 刷怪时设置，用于错帧和战术散开）
 var spawn_index: int = 0
@@ -466,6 +466,12 @@ func damage(amount: float):
 		var tween := create_tween()
 		model.scale = Vector3(1.1, 0.9, 1.1)
 		tween.tween_property(model, "scale", Vector3.ONE, 0.15)
+	# 受击唤醒：非缓降阶段 + IDLE/LOST → 立即进 CHASE
+	# 避免怪物落地后即使被玩家射击也毫无反应（见 adr/016 讨论）
+	if not _dropping and _ai_state in [AIState.IDLE, AIState.LOST]:
+		if player:
+			_last_known_player_pos = player.global_position
+		_change_state(AIState.CHASE)
 	if health <= 0 and not _dead:
 		destroy()
 

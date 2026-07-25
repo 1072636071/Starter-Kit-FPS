@@ -32,6 +32,8 @@ func before_each() -> void:
 	_player.max_grenades = 5
 	_player.weapon = _mock_weapon
 	_player.weapon_index = 0
+	# 初始化背包和备弹槽
+	_player.reset_backpack()
 	add_child(_player)
 
 	# 构造 RunDirector
@@ -41,8 +43,8 @@ func before_each() -> void:
 	_run_director._ready()  # 初始化 rng
 	_run_director._player = _player
 	_run_director.wave = 5  # 设置波次供奖励计算
-	_run_director.gold = 100
-	_run_director.gold_earned_total = 100
+	_run_director.copper = 10000
+	_run_director.copper_earned_total = 10000
 	add_child(_run_director)
 
 
@@ -101,11 +103,10 @@ func test_random_weapon_reward_with_full_slots() -> void:
 		_player.magazine.append(w.magazine_size)
 		_player.weapon_durability.append(w.durability_max)
 
-	var gold_before := _run_director.gold
-	# 应用 random_weapon 奖励（满槽 → 金币补偿）
+	var copper_before := _run_director.copper
+	# 应用 random_weapon 奖励（满槽 → 触发 chest_weapon_replace_offered 信号）
 	_run_director._apply_random_weapon_reward()
 	assert_eq(_player.weapons.size(), 3, "满槽时不应添加武器")
-	assert_gt(_run_director.gold, gold_before, "满槽时应获得金币补偿")
 
 
 func test_grenade_supply_reward() -> void:
@@ -120,8 +121,8 @@ func test_grenade_supply_at_cap_gives_gold() -> void:
 	# 填满手雷到上限
 	_player.grenades[&"emp"] = _player.max_grenades
 	_player.grenades[&"frag"] = _player.max_grenades
-	var gold_before := _run_director.gold
+	var copper_before := _run_director.copper
 	_run_director._apply_grenade_supply_reward()
 	assert_eq(_player.grenades[&"emp"], _player.max_grenades, "EMP 不应超上限")
 	assert_eq(_player.grenades[&"frag"], _player.max_grenades, "破片不应超上限")
-	assert_gt(_run_director.gold, gold_before, "全满时应获得金币补偿")
+	assert_gt(_run_director.copper, copper_before, "全满时应获得金币补偿")

@@ -38,10 +38,10 @@ func _bind_run_director() -> void:
 		_run_director.game_over.connect(_on_game_over)
 
 func _on_game_over(stats: Dictionary) -> void:
-	_stats_label.text = "存活波数: %d\n击杀数: %d\n累计金币: %d\n达到等级: %d" % [
+	_stats_label.text = "存活波数: %d\n击杀数: %d\n累计铜币: %d\n达到等级: %d" % [
 		int(stats.get("wave", 0)),
 		int(stats.get("kills", 0)),
-		int(stats.get("gold_earned_total", 0)),
+		int(stats.get("copper_earned_total", 0)),
 		int(stats.get("level", 1)),
 	]
 	visible = true

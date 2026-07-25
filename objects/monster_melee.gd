@@ -33,12 +33,12 @@ func _get_idle_anim() -> String:
 func _ready():
 	# 覆盖基类默认值（近战特化）
 	move_speed = 3.5
-	chase_range = 25.0
+	chase_range = 50.0
 	attack_damage = 15.0
 	attack_cooldown = 1.2
 	health = 120.0
 	# 近战怪被动感知 8m（基类默认，显式设置以明确意图）
-	awareness_range = 8.0
+	awareness_range = 16.0
 	# ADR 021：近战怪跳跃高度 5m（能上一层楼+余量）
 	jump_height = 5.0
 	super._ready()

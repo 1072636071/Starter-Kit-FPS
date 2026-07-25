@@ -31,7 +31,7 @@ extends Node
 # === 信号 ===
 signal wave_started(wave_number: int)
 signal wave_cleared(wave_number: int, cleared_by_timeout: bool)
-signal gold_changed(amount: int)
+signal currency_changed(copper: int)
 signal xp_changed(amount: int, threshold: int)
 signal level_up_offered(choices: Array)
 signal game_over(stats: Dictionary)
@@ -43,12 +43,12 @@ signal chest_reward_selected(reward_id: StringName)
 signal chest_weapon_replace_offered(weapon: Weapon)
 
 # === 本局状态 ===
-var gold: int = 0
+var copper: int = 10000  # 初始 1 金 = 10000 铜
 var xp: int = 0
 var level: int = 1
 var wave: int = 0
 var kills: int = 0
-var gold_earned_total: int = 0
+var copper_earned_total: int = 0
 var alive_count: int = 0
 # issue 24：宝箱替换武器暂存（满槽时暂存待替换武器，确认后消费）
 var _pending_replace_weapon: Weapon = null
@@ -68,22 +68,22 @@ var rng: RandomNumberGenerator
 #   - 波 10 预算 309 → 约 30+ 只怪物，需策略性弹药管理
 #   - 波 15 预算 773 → 大量精英堆叠，高手能撑但难以存活
 # 奖励 = cost（金币=经验同值），单波收益约为 budget 的 1.0 倍。
-# 弹药经济：初始手枪弹 36 发 + 弹匣 12 = 48 发足够清前 2 波；
+# 弹药经济：初始备弹槽 120 发（15 次换弹 × 8 发弹匣）足够清前 2 波；
 #           宝箱武器掉落（低档 60% 权重）不跳过经济系统；
 #           高稀有度弹种（狙击/榴弹）需策略性购买。
 # 耐久：blaster 120 / blaster-repeater 100，激励多枪轮换；
 #       耐久归零爆枪频率适中（非每波必爆、非一把枪通关）。
 const ENEMY_CONFIG: Dictionary = {
 	&"monster_melee": {
-		"cost": 5, "reward": 5, "min_wave": 1,
+		"cost": 5, "reward": 500, "min_wave": 1,
 		"scene": preload("res://objects/monster_melee.tscn"),
 	},
 	&"monster_ranged": {
-		"cost": 8, "reward": 8, "min_wave": 4,
+		"cost": 8, "reward": 800, "min_wave": 4,
 		"scene": preload("res://objects/monster_ranged.tscn"),
 	},
 	&"enemy": {
-		"cost": 10, "reward": 10, "min_wave": 7,
+		"cost": 10, "reward": 1000, "min_wave": 7,
 		"scene": preload("res://objects/enemy.tscn"),
 	},
 }
@@ -106,12 +106,13 @@ const UPGRADE_POOL := [
 	{"id": &"move_speed", "name": "+0.5 移动速度", "desc": "移动速度 +0.5"},
 	{"id": &"max_reserve", "name": "+1 备弹上限", "desc": "每把枪备弹上限 +1"},
 	{"id": &"reload_time", "name": "-10% 换弹时间", "desc": "换弹时间 ×0.9"},
+	{"id": &"backpack_weight", "name": "+10 背包负重", "desc": "背包负重上限 +10"},
 ]
 
 # issue 08：宝箱奖励池（6 项，即时结算，金币/经验按波次缩放）
 # issue 24：追加 random_weapon 和 grenade_supply
 const CHEST_REWARD_POOL := [
-	{"id": &"gold_bonus", "name": "金币大礼包", "desc": "获得 20+5×波数 金币"},
+	{"id": &"gold_bonus", "name": "金币大礼包", "desc": "获得 (20+5×波数) 银币"},
 	{"id": &"heal_x3", "name": "血包 ×3", "desc": "立即回复 75 点生命"},
 	{"id": &"xp_bonus", "name": "经验大礼包", "desc": "获得 15+3×波数 经验"},
 	{"id": &"ammo_refill", "name": "备弹补给", "desc": "所有武器备弹回满"},
@@ -148,19 +149,41 @@ func _ready() -> void:
 # 公共方法（issue 04 商店 / issue 08 宝箱 / issue 05 升级 调用）
 # ============================================================
 
-## 加金币（同时累加 gold_earned_total 用于结算）
-func add_gold(amount: int) -> void:
-	gold += amount
-	gold_earned_total += amount
-	gold_changed.emit(gold)
+## 加铜币（同时累加 copper_earned_total 用于结算）
+func add_copper(amount: int) -> void:
+	copper += amount
+	copper_earned_total += amount
+	currency_changed.emit(copper)
 
-## 扣金币；不足返回 false 不扣
-func spend_gold(cost: int) -> bool:
-	if gold < cost:
+## 扣铜币；不足返回 false 不扣
+func spend_copper(cost: int) -> bool:
+	if copper < cost:
 		return false
-	gold -= cost
-	gold_changed.emit(gold)
+	copper -= cost
+	currency_changed.emit(copper)
 	return true
+
+## 格式化铜币为金银铜混合显示字符串
+## 1 金 = 10000 铜，1 银 = 100 铜
+func format_currency(amount: int = -1) -> String:
+	var total := copper if amount < 0 else amount
+	var abs_total: int = absi(total)
+	@warning_ignore("integer_division")
+	var g: int = abs_total / 10000
+	@warning_ignore("integer_division")
+	var s: int = (abs_total % 10000) / 100
+	var c: int = abs_total % 100
+	var parts: Array[String] = []
+	if g > 0:
+		parts.append("%d金" % g)
+	if s > 0:
+		parts.append("%d银" % s)
+	if c > 0 or parts.is_empty():
+		parts.append("%d铜" % c)
+	var result := " ".join(parts)
+	if total < 0:
+		result = "-" + result
+	return result
 
 ## 加经验；跨阈值触发升级（issue 05：暂停 → 弹三选一 → apply → 恢复）
 ## 一次跨多级只弹一次三选一、升 1 级；剩余 XP 留待下次跨阈值再触发（不连弹）
@@ -195,8 +218,8 @@ func pick_chest_rewards(count: int = 3) -> Array:
 func apply_chest_reward(reward_id: StringName) -> void:
 	match reward_id:
 		&"gold_bonus":
-			var gold_bonus := 20 + 5 * wave
-			add_gold(gold_bonus)
+			var gold_bonus := (20 + 5 * wave) * 100
+			add_copper(gold_bonus)
 		&"heal_x3":
 			if _player and is_instance_valid(_player) and _player.has_method("heal"):
 				_player.heal(75)
@@ -205,12 +228,13 @@ func apply_chest_reward(reward_id: StringName) -> void:
 			add_xp(xp_bonus)  # 可能级联触发升级（issue 05）
 		&"ammo_refill":
 			if _player and is_instance_valid(_player):
-				# issue 09：备弹为按 ammo_type 共享的弹药池；同类弹药取最大上限回满
+				# 各弹种向背包补充一个弹匣量的弹药
 				for i in range(_player.weapons.size()):
 					var w: Weapon = _player.weapons[i]
 					var key: StringName = w.ammo_type
-					var cap: int = _player.effective_max_reserve(w)
-					_player.ammo_reserve[key] = maxi(int(_player.ammo_reserve.get(key, 0)), cap)
+					var weight_per_unit: float = _player.ITEM_WEIGHTS.get(key, 0.01)
+					# 尝试添加一个弹匣量，背包满了跳过
+					_player.backpack_add(key, &"ammo", w.magazine_size, weight_per_unit)
 				if _player.has_method("_emit_ammo_updated"):
 					_player._emit_ammo_updated()
 		&"random_weapon":
@@ -257,6 +281,8 @@ func _apply_upgrade_to_player(upgrade_id: StringName) -> void:
 			_player.bonus_max_reserve += 1
 		&"reload_time":
 			_player.reload_time_multiplier *= 0.9
+		&"backpack_weight":
+			_player.backpack_max_weight += 10.0
 
 ## 加击杀计数
 func add_kills(count: int = 1) -> void:
@@ -365,7 +391,7 @@ func _spawn_monster(type: StringName, pos: Vector3, index: int = 0) -> Node3D:
 func _on_monster_died(monster_type: StringName, monster: Node3D) -> void:
 	alive_count = max(0, alive_count - 1)
 	var reward := _reward_for(monster_type)
-	add_gold(reward)
+	add_copper(reward)
 	add_xp(reward)
 	add_kills(1)
 	if monster and is_instance_valid(monster):
@@ -506,15 +532,15 @@ func _apply_random_weapon_reward() -> void:
 		pool = filtered
 	# 若全部已持有，仍从全池抽（降级，不做金币补偿）
 
-	# 按 cost 分档加权
+	# 按 cost 分档加权（cost ÷ 10 为金币数）
 	var low: Array = []
 	var mid: Array = []
 	var high: Array = []
 	for w in pool:
-		var cost: int = w.weapon_cost
-		if cost <= 70:
+		var cost_gold: int = w.weapon_cost / 10
+		if cost_gold <= 7:
 			low.append(w)
-		elif cost <= 120:
+		elif cost_gold <= 12:
 			mid.append(w)
 		else:
 			high.append(w)
@@ -536,8 +562,9 @@ func _apply_random_weapon_reward() -> void:
 		_player.weapons.append(chosen)
 		_player.magazine.append(chosen.magazine_size)
 		_player.weapon_durability.append(chosen.durability_max)
-		if not _player.ammo_reserve.has(chosen.ammo_type):
-			_player.ammo_reserve[chosen.ammo_type] = _player.INITIAL_AMMO_PER_TYPE
+		# 同时送一弹匣量弹药到背包
+		var weight_per_unit: float = _player.ITEM_WEIGHTS.get(chosen.ammo_type, 0.01)
+		_player.backpack_add(chosen.ammo_type, &"ammo", chosen.magazine_size, weight_per_unit)
 		if _player.has_method("_emit_ammo_updated"):
 			_player._emit_ammo_updated()
 		if _player.weapon == null or _player.weapon_index < 0:
@@ -564,16 +591,17 @@ func confirm_chest_weapon_replace(slot_idx: int) -> void:
 	_player.weapons[slot_idx] = w
 	_player.weapon_durability[slot_idx] = w.durability_max
 	_player.magazine[slot_idx] = w.magazine_size
-	if not _player.ammo_reserve.has(w.ammo_type):
-		_player.ammo_reserve[w.ammo_type] = _player.INITIAL_AMMO_PER_TYPE
+	# 送一弹匣量弹药到背包
+	var weight_per_unit: float = _player.ITEM_WEIGHTS.get(w.ammo_type, 0.01)
+	_player.backpack_add(w.ammo_type, &"ammo", w.magazine_size, weight_per_unit)
 	if _player.has_method("_emit_ammo_updated"):
 		_player._emit_ammo_updated()
 	_pending_replace_weapon = null
 
-## 取消宝箱武器替换（玩家拒绝），做金币补偿
+## 取消宝箱武器替换（玩家拒绝），做金币补偿（3 金 = 30000 铜）
 func cancel_chest_weapon_replace() -> void:
 	if _pending_replace_weapon != null:
-		add_gold(30)
+		add_copper(30000)
 		_pending_replace_weapon = null
 
 ## 返回当前各武器槽位名称列表（用于 chest_ui 渲染替换对话框）
@@ -604,7 +632,7 @@ func _apply_grenade_supply_reward() -> void:
 	var frag_capped: bool = frag_current >= max_g
 
 	if emp_capped and frag_capped:
-		add_gold(30)
+		add_copper(3000)
 		return
 
 	if not emp_capped:
@@ -639,7 +667,7 @@ func _on_player_died() -> void:
 	var stats := {
 		"wave": wave,
 		"kills": kills,
-		"gold_earned_total": gold_earned_total,
+		"copper_earned_total": copper_earned_total,
 		"level": level,
 	}
 	game_over.emit(stats)

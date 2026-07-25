@@ -44,15 +44,15 @@ func _run_tests() -> void:
 	rd.monsters_parent = self  # 直接挂测试根
 	rd.spawn_points = []
 	add_child(rd)
-	_check(rd.gold == 0 and rd.xp == 0 and rd.level == 1 and rd.wave == 0 and rd.kills == 0,
-		"initial state gold/xp/level/wave/kills = 0/0/1/0/0")
-	rd.add_gold(100)
-	_check(rd.gold == 100, "add_gold(100) → 100 (got %d)" % rd.gold)
-	_check(rd.gold_earned_total == 100, "gold_earned_total tracks (got %d)" % rd.gold_earned_total)
-	_check(rd.spend_gold(30) == true, "spend_gold(30) succeeds")
-	_check(rd.gold == 70, "gold 70 after spend (got %d)" % rd.gold)
-	_check(rd.spend_gold(1000) == false, "spend_gold(1000) fails (insufficient)")
-	_check(rd.gold == 70, "gold unchanged on failed spend (got %d)" % rd.gold)
+	_check(rd.copper == 0 and rd.xp == 0 and rd.level == 1 and rd.wave == 0 and rd.kills == 0,
+		"initial state copper/xp/level/wave/kills = 0/0/1/0/0")
+	rd.add_copper(100)
+	_check(rd.copper == 100, "add_copper(100) → 100 (got %d)" % rd.copper)
+	_check(rd.copper_earned_total == 100, "copper_earned_total tracks (got %d)" % rd.copper_earned_total)
+	_check(rd.spend_copper(30) == true, "spend_copper(30) succeeds")
+	_check(rd.copper == 70, "copper 70 after spend (got %d)" % rd.copper)
+	_check(rd.spend_copper(1000) == false, "spend_copper(1000) fails (insufficient)")
+	_check(rd.copper == 70, "copper unchanged on failed spend (got %d)" % rd.copper)
 
 	# === 2. XP 阈值递增（首级 20，×1.3）===
 	_check(rd.xp_to_next(1) == 20, "xp_to_next(1) == 20 (got %d)" % rd.xp_to_next(1))
@@ -96,10 +96,10 @@ func _run_tests() -> void:
 	var fake_mon: Node3D = Node3D.new()
 	add_child(fake_mon)
 	fake_mon.global_position = fake_pos
-	var gold_before := rd.gold
+	var copper_before := rd.copper
 	rd.alive_count = 99
 	rd._on_monster_died(&"monster_ranged", fake_mon)
-	_check(rd.gold == gold_before + 8, "ranged reward +8 gold (got %d)" % (rd.gold - gold_before))
+	_check(rd.copper == copper_before + 800, "ranged reward +800 copper (got %d)" % (rd.copper - copper_before))
 	_check(rd.kills == 1, "kills = 1 (got %d)" % rd.kills)
 	# 血包已生成
 	var packs1 := get_tree().get_nodes_in_group("health_pack")
@@ -118,8 +118,8 @@ func _run_tests() -> void:
 	rd._on_monster_died(&"enemy", fake_mon3)
 	var packs3 := get_tree().get_nodes_in_group("health_pack")
 	_check(packs3.size() == 2, "different position → 2nd pack (got %d)" % packs3.size())
-	# enemy 奖励 = 10
-	_check(rd.gold == gold_before + 8 + 5 + 10, "rewards 8+5+10 (got %d)" % (rd.gold - gold_before))
+	# enemy 奖励 = 1000 copper
+	_check(rd.copper == copper_before + 800 + 500 + 1000, "rewards 800+500+1000 copper (got %d)" % (rd.copper - copper_before))
 	# 清理血包
 	for p in packs3:
 		p.queue_free()
@@ -167,14 +167,14 @@ func _run_tests() -> void:
 	_check(rd2.alive_count == 12, "alive_count == 12 after wave 1 start (got %d)" % rd2.alive_count)
 	_check(monsters_parent.get_child_count() == 12, "12 monsters spawned (got %d)" % monsters_parent.get_child_count())
 	# 杀光所有怪物
-	var gold_pre := rd2.gold
+	var copper_pre := rd2.copper
 	for m in monsters_parent.get_children():
 		if m.has_method("damage"):
 			m.damage(99999.0)
 	# 等一帧让 die 动画/延迟 queue_free 不影响断言（died 已同步发射）
 	await get_tree().physics_frame
 	_check(_wave_cleared == 1, "wave_cleared after killing all (got %d)" % _wave_cleared)
-	_check(rd2.gold == gold_pre + 12 * 5, "gold +60 from 12 melee kills (got %d)" % (rd2.gold - gold_pre))
+	_check(rd2.copper == copper_pre + 12 * 500, "copper +6000 from 12 melee kills (got %d)" % (rd2.copper - copper_pre))
 	_check(rd2.kills == 12, "kills == 12 (got %d)" % rd2.kills)
 	# issue 05 集成：12×5=60 XP 跨阈值触发升级暂停，需 apply 恢复
 	if bool(rd2.get("_level_up_pending")):

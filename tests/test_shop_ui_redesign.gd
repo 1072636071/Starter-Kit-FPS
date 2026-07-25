@@ -20,14 +20,14 @@ func _run_tests() -> void:
 	var player: CharacterBody3D = player_scene.instantiate()
 	player.add_to_group("player")
 	add_child(player)
-	# 清空弹药池方便观察
-	player.ammo_reserve.clear()
+	# 初始化背包
+	player.reset_backpack()
 
 	var rd := preload("res://scripts/run_director.gd").new()
 	rd.rng_seed = 42
 	add_child(rd)
-	rd.add_gold(500)
-	_check(rd.gold == 500, "rd.gold == 500")
+	rd.add_copper(50000)
+	_check(rd.copper == 50000, "rd.copper == 50000")
 
 	var shop_ui_scene := preload("res://scenes/shop_ui.tscn")
 	var shop_ui: Control = shop_ui_scene.instantiate()
@@ -63,30 +63,29 @@ func _run_tests() -> void:
 	_check(grenade_count >= 1 and grenade_count <= 2,
 		"grenade zone has 1-2 types (got %d)" % grenade_count)
 
-	# === 4. 购买手枪弹捆 → ammo_reserve["手枪弹"] 增加 24 ===
+	# === 4. 购买手枪弹捆 → 背包增加 24 发 ===
 	# 先把手枪弹加入商店库存（覆盖随机结果）
 	shop_ui._shop_ammo_types = [&"手枪弹"]
 	shop_ui._build_all_zones()
-	player.ammo_reserve[&"手枪弹"] = 0
-	_check(player.ammo_reserve.get(&"手枪弹", -1) == 0, "pistol ammo starts at 0")
+	player.backpack_items.clear()
+	player.backpack_weight = 0.0
+	_check(player.backpack_items.is_empty(), "backpack starts empty")
 
-	var gold_pre: int = rd.gold
+	var copper_pre: int = rd.copper
 	shop_ui._buy_ammo(&"手枪弹")
 	# _buy_ammo 有确认弹窗，这里直接测试内部逻辑（确认弹窗的回调会在弹窗关闭后才触发）
-	# 所以我们需要模拟确认弹窗的确认路径
-	# 先关掉确认弹窗，然后直接调用内部购买
 	for child in shop_ui.get_children():
 		if child is PanelContainer and child.name == "ConfirmDialog":
 			child.queue_free()
 
-	# 直接用金币扣除 + 弹药增加来验证（绕过弹窗）
-	rd.spend_gold(1)  # 手枪弹 1 金
-	player.ammo_reserve[&"手枪弹"] = 24
+	# 直接用铜币扣除 + 背包增加来验证（绕过弹窗）
+	rd.spend_copper(24)  # 手枪弹 24 铜
+	player.backpack_add(&"手枪弹", &"ammo", 24, player.ITEM_WEIGHTS.get(&"手枪弹", 0.01))
 
-	_check(player.ammo_reserve.get(&"手枪弹", 0) == 24,
-		"pistol ammo reserve increased by 24 (got %d)" % player.ammo_reserve.get(&"手枪弹", 0))
-	_check(rd.gold == gold_pre - 1,
-		"gold decreased by 1 for pistol ammo (got %d, expected %d)" % [rd.gold, gold_pre - 1])
+	_check(player.backpack_items.has(&"手枪弹"),
+		"pistol ammo added to backpack")
+	_check(rd.copper == copper_pre - 24,
+		"copper decreased by 24 for pistol ammo (got %d, expected %d)" % [rd.copper, copper_pre - 24])
 
 	# === 5. 满槽买枪 → 替换对话框弹出，确认后旧枪消失新枪入槽 ===
 	# 给玩家塞满 3 把武器

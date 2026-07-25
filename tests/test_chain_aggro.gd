@@ -69,13 +69,13 @@ func _run_tests() -> void:
 	var ranged_scene := preload("res://objects/monster_ranged.tscn")
 	var melee: CharacterBody3D = melee_scene.instantiate()
 	add_child(melee)
-	_check(abs(melee.get("awareness_range") - 8.0) < 0.01,
-		"T9a: monster_melee awareness_range == 8.0 (got %f)" % float(melee.get("awareness_range")))
+	_check(abs(melee.get("awareness_range") - 16.0) < 0.01,
+		"T9a: monster_melee awareness_range == 16.0 (got %f)" % float(melee.get("awareness_range")))
 
 	var ranged: CharacterBody3D = ranged_scene.instantiate()
 	add_child(ranged)
-	_check(abs(ranged.get("awareness_range") - 12.0) < 0.01,
-		"T9b: monster_ranged awareness_range == 12.0 (got %f)" % float(ranged.get("awareness_range")))
+	_check(abs(ranged.get("awareness_range") - 24.0) < 0.01,
+		"T9b: monster_ranged awareness_range == 24.0 (got %f)" % float(ranged.get("awareness_range")))
 
 	# === T3: IDLE 怪物在 awareness_range 内 + 视线 → 转 CHASE（被动感知）===
 	AlertSystem.clear()
@@ -103,7 +103,7 @@ func _run_tests() -> void:
 	melee2.position = Vector3(0, 0, 0)
 	add_child(melee2)
 	_land_monster(melee2)
-	# distance ≈ 141m，awareness=8m, chase=25m → 不应进入 CHASE
+	# distance ≈ 141m，awareness=16m, chase=50m → 不应进入 CHASE
 	for i in 30:
 		await get_tree().physics_frame
 	_check(int(melee2.get("_ai_state")) == 0,
@@ -126,8 +126,8 @@ func _run_tests() -> void:
 	melee3.position = Vector3(0, 0, 0)
 	add_child(melee3)
 	_land_monster(melee3)
-	# 在 50m 处 emit alert（radius=30），怪物 chase_range=25
-	# 50 > 30 (alert radius) AND 50 > 25 (chase_range) → 不触发
+	# 在 50m 处 emit alert（radius=30），怪物 chase_range=50
+	# 50 > 30 (alert radius) AND 50 > 50 (chase_range) 不成立，但 50 > 30 (alert radius) 已阻断 → 不触发
 	AlertSystem.emit_alert(Vector3(50, 0, 0), 30.0)
 	for i in 30:
 		await get_tree().physics_frame
@@ -178,8 +178,8 @@ func _run_tests() -> void:
 	var player_scene := preload("res://objects/player.tscn")
 	var player: CharacterBody3D = player_scene.instantiate()
 	add_child(player)
-	_check(float(player.get("SHOOT_ALERT_RADIUS")) == 30.0,
-		"T8: player SHOOT_ALERT_RADIUS == 30.0 (got %f)" % float(player.get("SHOOT_ALERT_RADIUS")))
+	_check(float(player.get("SHOOT_ALERT_RADIUS")) == 60.0,
+		"T8: player SHOOT_ALERT_RADIUS == 60.0 (got %f)" % float(player.get("SHOOT_ALERT_RADIUS")))
 	player.queue_free()
 	await get_tree().process_frame
 

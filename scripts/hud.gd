@@ -39,7 +39,15 @@ var _wave_number: int = 0
 # 武器检视 UI（TAB 打开）
 var _weapon_inspect_ui: Control
 
+# 背包 UI（ADR 023，T 键打开）
+var _backpack_ui: Control
+var _packing_prompt: Label
+
+# 按键说明面板（ADR 024，F5 打开）
+var _controls_help_ui: Control
+
 func _ready() -> void:
+	add_to_group("hud")
 	add_child(_list)
 	# issue 07：新增 HUD 元素
 	add_child(_shield_container)
@@ -54,6 +62,18 @@ func _ready() -> void:
 	# 武器检视 UI（ADR 022 配套，TAB 打开）
 	_weapon_inspect_ui = _build_weapon_inspect_ui()
 	add_child(_weapon_inspect_ui)
+
+	# 背包 UI（ADR 023，T 键打开）
+	_backpack_ui = _build_backpack_ui()
+	add_child(_backpack_ui)
+
+	# 按键说明面板（ADR 024，F5 打开）
+	_controls_help_ui = _build_controls_help_ui()
+	add_child(_controls_help_ui)
+
+	# 整理中提示
+	_packing_prompt = _build_packing_prompt()
+	add_child(_packing_prompt)
 
 	# 延迟一帧绑定 player，确保 player._ready 已初始化 weapons 与弹药
 	call_deferred("_bind_player")
@@ -272,16 +292,17 @@ func _bind_run_director() -> void:
 		_run_director = main.get_node_or_null("RunDirector")
 	if _run_director == null:
 		return
-	_run_director.gold_changed.connect(_on_gold_changed)
+	_run_director.currency_changed.connect(_on_currency_changed)
 	_run_director.xp_changed.connect(_on_xp_changed)
 	_run_director.wave_started.connect(_on_wave_started)
 	_run_director.wave_cleared.connect(_on_wave_cleared)
 	_run_director.kills_changed.connect(_on_kills_changed)
 	# 初始状态：波 0 Intermission，显示开局提示
 	show_wave_prompt(true)
+	_refresh_info_label()
 
-func _on_gold_changed(amount: int) -> void:
-	update_gold(amount)
+func _on_currency_changed(_copper: int) -> void:
+	_refresh_info_label()
 
 func _on_xp_changed(amount: int, threshold: int) -> void:
 	update_xp(amount, threshold)
@@ -336,8 +357,11 @@ func update_kills(_count: int) -> void:
 func _refresh_info_label() -> void:
 	if _run_director == null:
 		return
-	_info_label.text = "金币: %d   Lv.%d   波次: %d   击杀: %d" % [
-		_run_director.gold, _run_director.level, _wave_number, _run_director.kills]
+	var currency_str := ""
+	if _run_director.has_method("format_currency"):
+		currency_str = _run_director.format_currency()
+	_info_label.text = "🪙 %s   Lv.%d   波次: %d   击杀: %d" % [
+		currency_str, _run_director.level, _wave_number, _run_director.kills]
 
 # ============================================================
 # issue 07：新增 HUD 元素构建
@@ -423,7 +447,7 @@ func _build_shield_container() -> Control:
 
 func _build_info_label() -> Label:
 	var l := Label.new()
-	l.text = "金币: 0   Lv.1   波次: 0   击杀: 0"
+	l.text = "🪙 0铜   Lv.1   波次: 0   击杀: 0"
 	l.add_theme_font_size_override("font_size", 22)
 	l.offset_left = 20.0
 	l.offset_top = 20.0
@@ -486,9 +510,15 @@ func show_wave_prompt(visible_val: bool) -> void:
 # issue 05：卡住提示（ADR 016）
 # ============================================================
 
+func _stuck_key_name() -> String:
+	var events := InputMap.action_get_events("struggle")
+	if events.size() > 0 and events[0] is InputEventKey:
+		return (events[0] as InputEventKey).as_text_physical_keycode()
+	return "G"  # 保底
+
 func _build_stuck_prompt() -> Label:
 	var l := Label.new()
-	l.text = "按 G 尝试挣扎离开"
+	l.text = "按 %s 尝试挣扎离开" % _stuck_key_name()
 	l.add_theme_font_size_override("font_size", 28)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.anchor_left = 0.5
@@ -593,6 +623,74 @@ func _on_grenades_changed(grenades_dict: Dictionary, selected_type: StringName) 
 		HIGHLIGHT_COLOR if selected_type == &"frag" else DIM_COLOR)
 
 # ============================================================
+# 背包 UI（ADR 023，T 键打开）
+# ============================================================
+
+func _build_backpack_ui() -> Control:
+	var scene := load("res://scripts/backpack_ui.gd") as GDScript
+	if scene == null:
+		return Control.new()
+	var ui := scene.new() as Control
+	ui.visible = false
+	ui.mouse_filter = Control.MOUSE_FILTER_STOP
+	return ui
+
+func show_backpack_ui(player: Node3D) -> void:
+	if _backpack_ui == null or not is_instance_valid(_backpack_ui):
+		return
+	if _backpack_ui.has_method("open"):
+		_backpack_ui.open(player)
+
+func _build_packing_prompt() -> Label:
+	var l := Label.new()
+	l.text = "整理中…"
+	l.add_theme_font_size_override("font_size", 24)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.anchor_left = 0.5
+	l.anchor_right = 0.5
+	l.anchor_top = 0.5
+	l.anchor_bottom = 0.5
+	l.offset_left = -100
+	l.offset_right = 100
+	l.offset_top = -20
+	l.offset_bottom = 20
+	l.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.visible = false
+	return l
+
+func _process(_delta: float) -> void:
+	if _player and is_instance_valid(_player):
+		_packing_prompt.visible = _player.get("_is_packing") as bool
+
+# ============================================================
+# 按键说明面板（F5 打开，ADR 024）
+# ============================================================
+
+func _build_controls_help_ui() -> Control:
+	var scene := load("res://scripts/controls_help_ui.gd") as GDScript
+	if scene == null:
+		return Control.new()
+	var ui := scene.new() as Control
+	ui.visible = false
+	ui.mouse_filter = Control.MOUSE_FILTER_STOP
+	if ui.has_signal("closed"):
+		ui.closed.connect(_on_controls_help_closed)
+	return ui
+
+func _on_controls_help_closed() -> void:
+	# 仅当游戏未暂停时才恢复鼠标捕获
+	if not get_tree().paused:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _can_open_controls_help() -> bool:
+	if get_tree().paused:
+		return false
+	if _player == null or not is_instance_valid(_player):
+		return false
+	return true
+
+# ============================================================
 # 武器检视 UI（TAB 打开，ADR 022 配套）
 # ============================================================
 
@@ -637,4 +735,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if _player:
 			_weapon_inspect_ui.open(_player)
+			get_viewport().set_input_as_handled()
+	if event is InputEventKey and event.physical_keycode == KEY_F5 and event.pressed and not event.echo:
+		if _controls_help_ui == null or not is_instance_valid(_controls_help_ui):
+			return
+		if _controls_help_ui.visible:
+			_controls_help_ui.close()
+			get_viewport().set_input_as_handled()
+			return
+		if not _can_open_controls_help():
+			return
+		if _player:
+			_controls_help_ui.open(_player)
 			get_viewport().set_input_as_handled()

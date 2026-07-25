@@ -10,7 +10,7 @@ const MONSTER_TYPE: StringName = &"enemy"
 @export var fly_speed: float = 4.0
 @export var hover_height: float = 4.0
 @export var preferred_distance: float = 8.0
-@export var chase_range: float = 35.0
+@export var chase_range: float = 70.0
 
 @onready var muzzle_a = $MuzzleA
 @onready var muzzle_b = $MuzzleB

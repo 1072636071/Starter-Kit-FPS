@@ -27,7 +27,7 @@ var _strafe_switch_timer: float = 0.0
 const STRAFE_SWITCH_INTERVAL := 2.5
 
 # 连锁 Aggro：怪物开枪的 alert 传播半径
-const SHOOT_ALERT_RADIUS := 25.0
+const SHOOT_ALERT_RADIUS := 50.0
 
 func _monster_type() -> StringName:
 	return MONSTER_TYPE
@@ -41,12 +41,12 @@ func _get_idle_anim() -> String:
 func _ready():
 	# 覆盖基类默认值（远程特化）
 	move_speed = 2.5
-	chase_range = 30.0
+	chase_range = 60.0
 	attack_damage = 8.0
 	attack_cooldown = 1.8
 	health = 80.0
 	# 远程怪视力更好（被动感知范围 12m vs 近战 8m）
-	awareness_range = 12.0
+	awareness_range = 24.0
 	# ADR 021：远程怪跳跃高度 2m（仅能上矮平台）
 	jump_height = 2.0
 	super._ready()

@@ -183,7 +183,7 @@ func _on_chest_weapon_replace_offered(weapon: Weapon) -> void:
 
 	# 取消按钮（拒绝替换，给金币补偿）
 	var cancel_btn := Button.new()
-	cancel_btn.text = "取消（获得 30 金补偿）"
+	cancel_btn.text = "取消（获得 3 金补偿）"
 	cancel_btn.add_theme_font_size_override("font_size", 16)
 	cancel_btn.custom_minimum_size = Vector2(280, 36)
 	cancel_btn.pressed.connect(func():

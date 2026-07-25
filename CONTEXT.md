@@ -192,7 +192,7 @@
 | **Health Pack（血包）** | 怪物死亡 10% 概率掉落的 consumable（新建 `health_pack.tscn` Area3D + `health_pack.gd`）。**heal_amount = 25**（`@export`，恢复血量，不影响护盾）。在怪物死亡位置生成（飞行敌人死亡时 RayCast 投影到地面）。`Area3D.body_entered` 检测 `"player"` 组 → 调用 `player.heal(amount)`。**despawn_time = 15s** 后自动 `queue_free()`（最后 3s 闪烁提示）。`PROCESS_MODE_PAUSABLE`（暂停期间计时冻结）。血量（非护盾）的唯一恢复手段。 |
 | **Player.heal(amount)** | `Player` 新增方法：`health = min(health + amount, max_health)`，发 `health_updated` 信号。**不**改护盾、**不**触发 damage 管线。供血包拾取调用。 |
 | **max_health（最大血量）** | `Player` 新增 `@export var max_health: int = 100`（现 `health: int = 100` 无上限字段）。`heal` 与升级 `+20 最大血量` 均受此上限约束。 |
-| **Pause Semantics（暂停语义）** | 三处暂停源（Shop walk-in / Level Up XP 跨阈值 / Game Over 死亡）统一用 `get_tree().paused = true` + `process_mode` 分层：暂停态 UI（Shop/LevelUp/GameOver）为 `PROCESS_MODE_WHEN_PAUSED`，Player/Monsters/弹体/血包/HUD/RunDirector 为 `PROCESS_MODE_PAUSABLE`（默认）。进入暂停时 `Input.set_mouse_mode(MOUSE_MODE_VISIBLE)`，退出 `MOUSE_MODE_CAPTURED`。护盾 regen 计时器随 Player 暂停冻结（商店里不回盾）。暂停源互斥：RunDirector 触发前检查 `get_tree().paused`，已暂停则不叠加（死亡优先级最高，会接管并隐藏其它暂停 UI）。见 [ADR 015](file:///g:/work/Starter-Kit-FPS/docs/adr/015-pause-semantics.md)。 |
+| **Pause Semantics（暂停语义）** | 四处暂停源（Shop walk-in / Level Up XP 跨阈值 / Game Over 死亡 / Controls Help 按键说明）统一用 `get_tree().paused = true` + `process_mode` 分层：暂停态 UI（Shop/LevelUp/GameOver/ControlsHelp）为 `PROCESS_MODE_WHEN_PAUSED`，Player/Monsters/弹体/血包/HUD/RunDirector 为 `PROCESS_MODE_PAUSABLE`（默认）。进入暂停时 `Input.set_mouse_mode(MOUSE_MODE_VISIBLE)`，退出 `MOUSE_MODE_CAPTURED`。护盾 regen 计时器随 Player 暂停冻结（商店里不回盾）。暂停源互斥：RunDirector 触发前检查 `get_tree().paused`，已暂停则不叠加（死亡优先级最高，会接管并隐藏其它暂停 UI；Controls Help 为最低优先级暂停源，可被任意其它暂停源或玩家主动关闭接管）。见 [ADR 015](file:///g:/work/Starter-Kit-FPS/docs/adr/015-pause-semantics.md) / [ADR 024](file:///g:/work/Starter-Kit-FPS/docs/adr/024-controls-help-overlay.md)。 |
 | **Upgrade Stacking（升级叠加语义）** | 升级**可重复选、可叠加**（不同级升级可拿同一项）。**加法类**（`+20 最大血量` / `+5 护盾恢复速率` / `+0.5 移动速度` / `+1 每把枪备弹上限`）线性叠加；**乘法类**（`+15% 伤害` / `-10% 换弹时间`）乘法叠加（×1.15³ / ×0.9³）。`+20 最大血量` 同步回 20 血；`+5 护盾恢复速率` 不立即回盾。"3 个不重复"指本次三张互不相同，不跨级记忆。 |
 | **Player Upgrade Bonus Fields（玩家升级 bonus 字段）** | 升级修改的是 **Player 实例的运行时 bonus 字段**，**不修改 `Weapon` 资源**（`.tres` 全局共享引用，直接改会跨局污染且可能写盘）。字段：`max_health` / `bonus_max_reserve`（有效备弹上限 = `weapon.max_reserve + bonus_max_reserve`）/ `damage_multiplier`（实际伤害 = `weapon.damage × damage_multiplier`）/ `reload_time_multiplier` / `move_speed_bonus` / `shield_regen_rate_bonus`。随场景重置自然清零（配合 `reload_current_scene()` 重开机制，无需手动 reset）。 |
 | **RNG（可注入种子随机数）** | RunDirector 持有 `@export var rng_seed: int = 0`（0 = 随机）+ `var rng: RandomNumberGenerator`，`_ready()` 初始化。供血包掉率（issue 03）、升级抽卡（issue 05）、宝箱抽卡（issue 08）等概率逻辑使用，测试时可注入固定种子断言分布。 |
@@ -327,6 +327,17 @@
 | 手雷投掷 | **G** | `throw_grenade` |
 | 丢枪 | **X** | `drop_weapon` |
 | 背包 | **T** | `backpack`（ADR 023 新增） |
+| 按键说明 | **F5** | `controls_help`（ADR 024 新增，暂停态模态面板） |
+
+## 按键说明面板（Controls Help Overlay）
+
+| 术语 | 定义 |
+|------|------|
+| **Controls Help（按键说明面板）** | 按 F5 弹出的暂停态模态面板，集中展示全部操作键位说明。项目第 4 个暂停源（见 Pause Semantics / ADR 015 / ADR 024）：打开时 `get_tree().paused = true`、鼠标 `MOUSE_MODE_VISIBLE`、面板 `PROCESS_MODE_WHEN_PAUSED`，与背包/商店/升级卡同层；关闭后恢复鼠标捕获回到游戏。仅游戏进行中可用（`get_tree().paused == false`），已在其他暂停态（商店/升级/死亡）时 F5 无效。由 HUD（`scripts/hud.gd`）托管，加载 `scenes/controls_help_ui.tscn` 后 `add_child`、`visible=false` 待命，复用武器检视 UI 的 `_build_*_ui()` 托管模式。脚本 `scripts/controls_help_ui.gd`。 |
+| **controls_help（输入动作）** | 新增输入动作，动作名 `controls_help`，绑定 F5 键（physical_keycode = F5、无修饰键）。面板内键名通过 `InputMap.action_get_events()` + `as_text_physical_keycode()` 动态取出（复刻 `hud._wave_prompt_text()` 写法），键位改绑后说明自动同步、不写死。 |
+| **Controls Help Close（关闭方式）** | 两种关闭路径：(1) 再按 F5 切换关闭（Toggle）；(2) 鼠标点击面板外的暗色背景关闭。**不**用 Esc 关闭（Esc 在暂停语义中已有"退出暂停"含义，面板由 F5 独管开关路径更干净）。 |
+| **Controls Help Key Map（键位中文映射字典）** | 一张手维护的字典，将 InputMap 动作名映射为中文标签与分组（如 `{"move_forward": {label: "前进", group: "移动"}, "shoot": {label: "射击", group: "战斗"}}`），面板渲染时用它生成可读文案 + 从 InputMap 取实时键名。只收录玩家可操作动作的子集（约 20 条），不暴露 `mouse_capture`、`camera_left` 等内部/手柄轴动作。 |
+| **Controls Help Runtime Gate（运行时门控）** | F5 仅当 `get_tree().paused == false` 时响应（与武器检视 TAB 的 `_can_open_weapon_inspect()` 逻辑一致），已在其他暂停态时无效。 |
 
 ## 手雷系统（Grenade System）
 

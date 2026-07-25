@@ -40,7 +40,8 @@ var weapon_index := 0
 
 # 武器数量上限（issue 09，ADR 022）
 const MAX_WEAPONS := 3
-# 弹药池初始值（issue 09）：每种弹药类型初始 36 发
+# 弹药池初始值（issue 09）：每种弹药类型初始 36 发（旧系统，供测试兼容）
+# 实际开局可用备弹由下方 ammo_slots 初始化提供（120 发）
 const INITIAL_AMMO_PER_TYPE := 36
 # 保底弹药类型：弹药池至少包含手枪弹（issue 09）
 const AMMO_TYPE_PISTOL: StringName = &"手枪弹"
@@ -144,7 +145,7 @@ const ADS_SPEED_FACTOR := 0.7
 const ADS_SPREAD_FACTOR := 0.5
 
 # 连锁 Aggro：玩家开枪的 alert 传播半径
-const SHOOT_ALERT_RADIUS := 30.0
+const SHOOT_ALERT_RADIUS := 60.0
 
 var is_aiming := false
 
@@ -173,6 +174,88 @@ var _arc_preview_mesh: MeshInstance3D
 var _arc_preview_material: StandardMaterial3D
 @export var arc_preview_steps := 20
 @export var arc_preview_dt := 0.05
+
+# === 背包系统（ADR 023，issue 03/04/05）===
+
+# 背包物品：{item_key: {type: StringName, count: int, weight_per_unit: float}}
+var backpack_items: Dictionary = {}
+
+# 当前总重量和上限
+var backpack_weight: float = 0.0
+var backpack_max_weight: float = 80.0
+
+# 物品重量常量（每单位）
+const ITEM_WEIGHTS: Dictionary = {
+	&"pistol_ammo": 0.01,
+	&"rifle_ammo": 0.02,
+	&"shotgun_ammo": 0.04,
+	&"sniper_ammo": 0.08,
+	&"energy_cell": 0.03,
+	&"grenade_ammo": 0.10,
+	&"health_pack": 1.5,
+}
+
+# 枪械重量按 weapon_cost 分档
+func _weapon_backpack_weight(w: Weapon) -> float:
+	if w.weapon_cost <= 5:
+		return 3.0
+	elif w.weapon_cost <= 10:
+		return 5.0
+	else:
+		return 8.0
+
+# 背包操作接口
+func backpack_add(item_key: StringName, type: StringName, count: int, weight_per_unit: float) -> bool:
+	var total_weight := weight_per_unit * count
+	if not backpack_can_add(total_weight):
+		return false
+	if backpack_items.has(item_key):
+		var entry: Dictionary = backpack_items[item_key]
+		entry["count"] += count
+	else:
+		backpack_items[item_key] = {"type": type, "count": count, "weight_per_unit": weight_per_unit}
+	backpack_weight += total_weight
+	return true
+
+func backpack_remove(item_key: StringName, count: int) -> int:
+	if not backpack_items.has(item_key):
+		return 0
+	var entry: Dictionary = backpack_items[item_key]
+	var removed := mini(count, entry["count"])
+	entry["count"] -= removed
+	backpack_weight -= entry["weight_per_unit"] * removed
+	if entry["count"] <= 0:
+		backpack_items.erase(item_key)
+	return removed
+
+func backpack_get_weight(item_key: StringName) -> float:
+	if not backpack_items.has(item_key):
+		return 0.0
+	var entry: Dictionary = backpack_items[item_key]
+	return entry["weight_per_unit"] * entry["count"]
+
+func backpack_can_add(weight: float) -> bool:
+	return (backpack_weight + weight) <= backpack_max_weight
+
+func add_backpack_capacity(amount: float) -> void:
+	backpack_max_weight += amount
+
+## 重置背包和备弹槽到初始状态（供测试和重开使用）
+func reset_backpack() -> void:
+	backpack_items.clear()
+	backpack_weight = 0.0
+	backpack_max_weight = 80.0
+	ammo_slots.clear()
+	for _i in range(AMMO_SLOT_COUNT):
+		ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})
+
+# === 备弹槽系统（ADR 023，issue 04）===
+
+const AMMO_SLOT_COUNT := 10
+var ammo_slots: Array[Dictionary] = []
+
+# 整理动画状态
+var _is_packing := false
 
 signal health_updated
 # 护盾变化信号（参数：当前 shield / shield_max），供 HUD 绘制护盾条（issue 07）
@@ -232,6 +315,19 @@ func _ready():
 		weapon = weapons[weapon_index]
 		initiate_change_weapon(weapon_index)
 	_emit_ammo_updated()
+
+	# 初始化备弹槽：为首把已装备武器提供 120 发初始弹药
+	ammo_slots.clear()
+	if not weapons.is_empty():
+		var first_ammo_type: StringName = weapons[0].ammo_type
+		var mag_size := maxi(1, weapons[0].magazine_size)
+		var reload_count := int(ceil(120.0 / float(mag_size)))
+		ammo_slots.append({"ammo_type": first_ammo_type, "remaining": reload_count, "capacity": reload_count})
+		for _i in range(1, AMMO_SLOT_COUNT):
+			ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})
+	else:
+		for _i in range(AMMO_SLOT_COUNT):
+			ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})
 
 	# 近战视图模型：实例化一次，挂 CameraItem 下（与 Container 平级，不在 Container 内
 	# 否则会被 change_weapon() 的 remove_child() 清掉）。初始隐藏。
@@ -411,12 +507,33 @@ func add_reserve(w: Weapon, amount: int) -> void:
 		return
 	ammo_reserve[w.ammo_type] = get_reserve(w) + amount
 
-## 按武器展开当前备弹快照（与 weapons 同序），供 HUD 等读取弹药池（issue 09）
+## 按武器展开当前备弹快照（与 weapons 同序），从备弹槽计算各弹种还能换弹次数
 func get_reserves_snapshot() -> Array[int]:
 	var out: Array[int] = []
 	for w in weapons:
-		out.append(get_reserve(w))
+		out.append(get_available_reloads(w.ammo_type))
 	return out
+
+## 查询备弹槽中各弹种还能换弹的次数
+func get_available_reloads(ammo_type: StringName) -> int:
+	var total := 0
+	for slot in ammo_slots:
+		if slot["ammo_type"] == ammo_type:
+			total += slot["remaining"]
+	return total
+
+## 返回 10 个槽的摘要
+func get_slot_status() -> Array:
+	var out: Array = []
+	for slot in ammo_slots:
+		out.append({"ammo_type": slot["ammo_type"], "remaining": slot["remaining"], "capacity": slot["capacity"]})
+	return out
+
+## 由背包 UI 调用，设置某个备弹槽
+func set_ammo_slot(slot_idx: int, ammo_type: StringName, remaining: int, capacity: int) -> void:
+	if slot_idx < 0 or slot_idx >= ammo_slots.size():
+		return
+	ammo_slots[slot_idx] = {"ammo_type": ammo_type, "remaining": remaining, "capacity": capacity}
 
 # Auto-Step：在地面+水平移动时，自动登高 ≤ step_height 的台阶。
 #
@@ -554,6 +671,11 @@ func handle_controls(delta):
 			is_charging_grenade = true
 			grenade_charge_time = 0.0
 
+	# 背包（T 键）
+	if Input.is_action_just_pressed("backpack"):
+		if not _is_packing:
+			action_backpack()
+
 	if Input.is_action_just_released("throw_grenade") and is_charging_grenade:
 		_throw_grenade()
 		is_charging_grenade = false
@@ -612,6 +734,9 @@ func action_shoot():
 	if Input.is_action_pressed("shoot"):
 		if not camera.is_inside_tree(): return # camera 在 SubViewport 中初始化或场景切换时可能离树
 		if weapon == null: return # 空手（武器全部损毁）不可射击（issue 09）
+
+		# 整理中禁射
+		if _is_packing: return
 
 		# 换弹中禁射
 		if is_reloading: return
@@ -858,6 +983,18 @@ func action_weapon_toggle():
 
 		Audio.play("sounds/weapon_change.ogg")
 
+# 背包（T 键，ADR 023）
+# 暂停时 / 死亡 / 商店 / 升级中不可打开
+func action_backpack() -> void:
+	if get_tree().paused:
+		return
+	if _dead:
+		return
+	# 通知 HUD 打开背包 UI
+	var hud_node := get_tree().get_first_node_in_group("hud")
+	if hud_node and hud_node.has_method("show_backpack_ui"):
+		hud_node.show_backpack_ui(self)
+
 # issue 21：丢弃当前武器（X 键）
 # 在玩家位置生成 weapon_pickup，从武器数组中移除，自动切换或空手
 func action_drop_weapon() -> void:
@@ -1001,11 +1138,25 @@ func _apply_texture_to_mesh(mesh_instance: MeshInstance3D, texture: Texture2D) -
 
 func action_reload(index: int) -> void:
 	if is_reloading: return
+	if _is_packing: return  # 整理中不可换弹
 	if index < 0 or index >= weapons.size(): return
 	var w := weapons[index]
-	# 弹匣已满或弹药池对应类型备弹为零则不换弹（issue 09）
+	# 弹匣已满则不换弹
 	if magazine[index] >= w.magazine_size: return
-	if get_reserve(w) <= 0: return
+	# 从备弹槽找可用换弹次数
+	if get_available_reloads(w.ammo_type) <= 0:
+		print("[备弹槽] 备弹槽已空，按 T 从背包补货")
+		return
+
+	# 消耗一个备弹槽
+	var found := false
+	for slot in ammo_slots:
+		if slot["ammo_type"] == w.ammo_type and slot["remaining"] > 0:
+			slot["remaining"] -= 1
+			found = true
+			break
+	if not found:
+		return
 
 	_stop_beam_active()
 	is_reloading = true
@@ -1033,13 +1184,10 @@ func _step_reload(delta: float) -> void:
 	if reload_time_remaining > 0.0:
 		return
 
-	# 完成转移：尽量填满弹匣，弹药池不足则只装可用数（issue 09：按 ammo_type 共享池）
+	# 完成转移：填满弹匣（备弹槽已扣 remaining，此处将弹匣填到 magazine_size）
 	var idx := reload_index
 	var w := weapons[idx]
-	var needed := w.magazine_size - magazine[idx]
-	var moved := mini(needed, get_reserve(w))
-	magazine[idx] += moved
-	add_reserve(w, -moved)
+	magazine[idx] = w.magazine_size
 
 	_reset_reload_state(false)
 
@@ -1280,11 +1428,10 @@ func _set_stuck_state(new_state: StuckState) -> void:
 
 # 卡住检测：在 NORMAL 状态下每帧调用
 func _detect_stuck(delta: float) -> void:
-	# 排除条件：缓降中 / 不在地面 / 已死亡
+	# 排除条件：缓降中 / 已死亡
+	# 注意：不检查 is_on_floor()——玩家可能被卡在几何体缝隙中（如房子内部），
+	# 碰撞解算可能使角色不贴地，此时仍应触发卡住检测（ADR 016）。
 	if _dropping or _dead:
-		_stuck_timer = 0.0
-		return
-	if not is_on_floor():
 		_stuck_timer = 0.0
 		return
 

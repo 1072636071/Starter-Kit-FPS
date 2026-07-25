@@ -154,7 +154,7 @@ func _run_tests() -> void:
 	_check(rd.alive_count == 0, "all fell → alive_count == 0 (got %d)" % rd.alive_count)
 	_check(int(_counters["wave_cleared"]) == 1, "wave_cleared emitted once (got %d)" % int(_counters["wave_cleared"]))
 	_check(rd.kills == 12, "kills == 12 after fall (got %d)" % rd.kills)
-	_check(rd.gold == 60, "gold == 60 (12×5 melee reward) (got %d)" % rd.gold)
+	_check(rd.copper == 6000, "copper == 6000 (12×500 melee reward) (got %d)" % rd.copper)
 
 	# 等一帧让延迟 queue_free / 计时器不至于在 quit 前抛错
 	await get_tree().process_frame

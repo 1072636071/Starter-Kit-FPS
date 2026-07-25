@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b0g4b47ejkfhf"]
+
+[ext_resource type="Script" path="res://tests/test_controls_help.gd" id="1_test"]
+
+[node name="TestControlsHelp" type="Node3D"]
+script = ExtResource("1_test")
