@@ -27,6 +27,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
 shape = SubResource("CapsuleShape3D_gdq8c")
 
 [node name="MeleeHitbox" type="Area3D" parent="."]
+collision_mask = 2
 monitoring = false
 monitorable = false
 

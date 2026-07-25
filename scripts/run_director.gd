@@ -291,7 +291,7 @@ func _spawn_all(types: Array[StringName]) -> void:
 				pos += Vector3(rng.randf_range(-2.0, 2.0), 0.0, rng.randf_range(-2.0, 2.0))
 		else:
 			pos = Vector3.ZERO
-		_spawn_monster(types[i], pos)
+		_spawn_monster(types[i], pos, i)
 
 func _shuffle_in_place(arr: Array) -> void:
 	for i in range(arr.size() - 1, 0, -1):
@@ -300,12 +300,15 @@ func _shuffle_in_place(arr: Array) -> void:
 		arr[i] = arr[j]
 		arr[j] = tmp
 
-func _spawn_monster(type: StringName, pos: Vector3) -> Node3D:
+func _spawn_monster(type: StringName, pos: Vector3, index: int = 0) -> Node3D:
 	var scene: PackedScene = _monster_scenes.get(type)
 	if scene == null:
 		push_warning("RunDirector: 未知怪物类型 %s" % str(type))
 		return null
 	var m: Node3D = scene.instantiate()
+	# ADR 017：设置出生序号（用于错帧更新和战术散开）
+	if m.has_method("set") and "spawn_index" in m:
+		m.spawn_index = index
 	monsters_parent.add_child(m)
 	m.global_position = pos
 	if m.has_signal("died"):

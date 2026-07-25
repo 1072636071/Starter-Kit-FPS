@@ -192,6 +192,23 @@
 | **Stuck UI Prompt（卡住提示）** | STUCK 状态时屏幕中下方显示的文字提示："按 G 尝试挣扎离开"。进入 STUCK 时显示，按 G 进入 ESCAPING 或回到 NORMAL 时隐藏。 |
 | **_last_move_dir（最后移动方向）** | 玩家正常移动时持续缓存的水平速度归一化方向（`Vector3`，y=0）。卡住触发时冻结该值，作为推回方向的依据（取反）。 |
 
+## 敌人 AI 系统（Enemy AI）
+
+参见 [ADR 017](file:///g:/work/Starter-Kit-FPS/docs/adr/017-enemy-ai-overhaul.md)。
+
+| 术语 | 定义 |
+|------|------|
+| **Monster FSM（怪物状态机）** | 手写有限状态机（enum + match），定义在 `monster_base.gd`。状态枚举：`IDLE`（待机/缓降后初始）→ `CHASE`（追踪玩家）→ `ATTACK`（攻击中）→ `RETREAT`（远程怪后退/脱离）→ `LOST`（丢失视线，搜索最后已知位置）→ `IDLE`。基类管理状态转换框架，子类覆盖各状态的具体行为。取代原 `_physics_process` 中的 if/elif 链。 |
+| **RVO Avoidance（RVO 避障）** | Godot 内置的 Reciprocal Velocity Obstacles 动态避障。所有地面怪物（`monster_melee`、`monster_ranged`）启用 `avoidance_enabled = true`，通过 `velocity_computed(safe_velocity)` 信号回调获取安全速度后执行 `move_and_slide()`。参数：`radius=0.5`、`neighbor_distance=5.0`、`max_neighbors=8`、`max_speed=move_speed`、`avoidance_layers=1`、`avoidance_mask=1`。飞行敌人不参与（Node3D，无物理体）。 |
+| **Monster Collision Isolation（怪物碰撞隔离）** | 怪物之间**关闭物理碰撞**：所有怪物的 CollisionShape3D 设在 layer 2（怪物层），mask 只含 layer 1（地形）和 layer 3（玩家攻击区），不含 layer 2。怪物间距完全由 RVO 管理，避免物理碰撞与 RVO 互相打架导致抖动。 |
+| **Line of Sight（视线检测）** | 怪物追踪前的可见性判定：从怪物眼部位置（`global_position + Vector3(0, 1.2, 0)`）向玩家胸部（`player.global_position + Vector3(0, 0.8, 0)`）发射 RayCast3D，若命中非玩家物体（墙体等）则视线被挡。视线被挡时进入 LOST 状态。 |
+| **LOST State（丢失状态）** | 视线被挡后的搜索行为：怪物移动到**最后已知玩家位置**（`_last_known_player_pos`），到达后环顾 2s（缓慢转向扫描），若期间重新获得视线则回到 CHASE，否则回到 IDLE。LOST 状态下路径更新频率降至 0.6s（正常 0.3s），节省性能。 |
+| **Path Throttle（路径节流）** | 非每帧更新 `nav_agent.target_position`，而是每 `path_update_interval = 0.3s` 更新一次。每只怪物按出生序号错开更新帧（`_path_timer_offset = index * 0.05`），避免同帧大量路径计算。CHASE 状态 0.3s，LOST 状态 0.6s。 |
+| **Tactical Spread（战术散开）** | 近战怪物追踪时不全部冲向玩家同一点：每只怪根据出生序号分配一个**环绕偏移角**（`_approach_angle = index * (2π / alive_count)`），实际目标点 = 玩家位置 + 偏移（半径 1.5m 的圆上）。使多只近战怪从不同方向包围玩家，而非堆成一团。 |
+| **Flying Enemy AI（飞行敌人 AI）** | `enemy.gd` 重写为追踪型：保持悬停高度（`hover_height = 4.0m`，相对地面），水平方向追踪玩家（速度 `fly_speed = 4.0`），保持 `preferred_distance = 8.0m` 距离环绕 strafing。使用 `lerp` 平滑移动而非瞬移。不再使用 NavMesh（飞行无视地形），纯向量计算。被墙挡时（RayCast 检测）升高越过或绕行。 |
+| **NavMesh Tuning（导航网格调参）** | `nav_region.gd` 烘焙参数优化：`agent_radius = 0.5`（与碰撞体匹配）、`agent_height = 1.5`（怪物模型高度）、`cell_size = 0.25`（精度提升，默认 0.3 太粗）、`agent_max_climb = StepConstants.STEP_HEIGHT`（不变）、`agent_max_slope = 45.0`（默认）。更小的 cell_size 使路径更贴合墙壁，减少"穿墙感"。 |
+| **Staggered Updates（错帧更新）** | 性能优化：多只怪物的路径计算分散到不同物理帧。每只怪在 `_ready()` 中按序号计算 `_update_delay = (index % 6) * 0.05`，路径计时器初始值偏移该量。16 只怪时分 6 帧处理，每帧最多 3 只怪请求路径。 |
+
 ## 场景文件约定（Scene File Conventions）
 
 | 约定 | 说明 |

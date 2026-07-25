@@ -1,7 +1,6 @@
 extends "res://objects/monster_base.gd"
 ## 远程怪物：与玩家保持距离，持枪发射弹幕攻击
-## T1: 持枪模型 + 枪口开火 + 后坐/闪光反馈
-## T4/T5 骨骼移动/待机/死亡动画已在基类实现
+## FSM 状态行为覆盖 + 随机 strafe（ADR 017）
 
 const CombatUtils = preload("res://scripts/combat_utils.gd")
 const MONSTER_TYPE: StringName = &"monster_ranged"
@@ -13,18 +12,28 @@ const MONSTER_TYPE: StringName = &"monster_ranged"
 @export var enemy_spread: float = 0.08
 ## 枪模型（默认 blaster.glb）；留空则不挂枪
 @export var gun_model: PackedScene = preload("res://models/weapons/blaster.glb")
-## 枪口闪光帧动画（复用 burst_animation.tres）
+## 枪口闪光帧动画
 @export var muzzle_flash_frames: SpriteFrames = preload("res://sprites/burst_animation.tres")
 
 var muzzle: Marker3D
 var gun_instance: Node3D
 
-## issue 03：返回本怪物的硬编码类型标识（RunDirector 监听 died 信号做奖励结算）
+# 随机 strafe
+var _strafe_dir: float = 1.0
+var _strafe_switch_timer: float = 0.0
+const STRAFE_SWITCH_INTERVAL := 2.5
+
 func _monster_type() -> StringName:
 	return MONSTER_TYPE
 
+func _get_attack_range() -> float:
+	return preferred_distance + 3.0
+
+func _get_idle_anim() -> String:
+	return "holding-right"
+
 func _ready():
-	# 覆盖基类默认值（远程特化）—— 不重复 @export（基类已声明，避免 parse error）
+	# 覆盖基类默认值（远程特化）
 	move_speed = 2.5
 	chase_range = 30.0
 	attack_damage = 8.0
@@ -32,23 +41,23 @@ func _ready():
 	health = 80.0
 	super._ready()
 
-	# T1: 挂枪模型 + 枪口 Marker3D + 常驻持枪姿态
+	# 随机 strafe 方向
+	_strafe_dir = [-1.0, 1.0].pick_random()
+	_strafe_switch_timer = randf_range(1.5, 3.0)
+
+	# 挂枪模型 + 枪口 + 常驻持枪姿态
 	if gun_model and arm_right:
 		gun_instance = gun_model.instantiate()
 		arm_right.add_child(gun_instance)
-		# 本地偏移：手臂远端→手掌位置；枪管朝怪物前方（-z）
 		gun_instance.position = Vector3(0.0, -0.25, 0.05)
 		gun_instance.rotation_degrees = Vector3(90, 0, 0)
 		gun_instance.scale = Vector3(0.5, 0.5, 0.5)
-		# 枪口 Marker3D：枪管前端（局部 -z 方向，即怪物前方）
 		muzzle = Marker3D.new()
 		muzzle.name = "Muzzle"
 		muzzle.position = Vector3(0.0, 0.0, -0.45)
 		gun_instance.add_child(muzzle)
-		# 枪模型 layers = 4（layer 3：进主相机，不进小地图）
 		for child in gun_instance.find_children("*", "MeshInstance3D", true, false):
 			child.layers = 4
-		# 枪口闪光 AnimatedSprite3D
 		if muzzle_flash_frames:
 			var flash := AnimatedSprite3D.new()
 			flash.name = "MuzzleFlash"
@@ -57,76 +66,121 @@ func _ready():
 			flash.layers = 4
 			flash.visible = false
 			gun_instance.add_child(flash)
-	# 常驻持枪姿态（0.167s 播完停在末帧）
+	# 常驻持枪姿态
 	if anim_player:
 		anim_player.play("holding-right")
 		_current_anim = "holding-right"
 
-func _physics_process(delta):
-	super._physics_process(delta)  # 基类坠落安全网 + 缓降
-	if _dead or not player:
+# === 状态转换覆盖（远程怪特有：太近→RETREAT）===
+func _evaluate_transitions() -> void:
+	if not player:
 		return
-	if _dropping:
-		return  # 缓降中不执行 AI
+	var to_player := player.global_position - global_position
+	to_player.y = 0.0
+	var distance := to_player.length()
 
-	# 重力
-	gravity += 20.0 * delta
-	if gravity > 0 and is_on_floor():
-		gravity = 0.0
+	match _ai_state:
+		AIState.IDLE:
+			if distance < chase_range and _has_los:
+				_change_state(AIState.CHASE)
+		AIState.CHASE:
+			if not _has_los:
+				_change_state(AIState.LOST)
+			elif distance < too_close_distance:
+				_change_state(AIState.RETREAT)
+			elif distance < preferred_distance + 3.0 and _can_attack and not _is_attacking:
+				_change_state(AIState.ATTACK)
+		AIState.ATTACK:
+			pass  # 攻击完成后切回
+		AIState.RETREAT:
+			if not _has_los:
+				_change_state(AIState.LOST)
+			elif distance > too_close_distance + 2.0:
+				_change_state(AIState.CHASE)
+		AIState.LOST:
+			if _has_los:
+				var dist := (player.global_position - global_position)
+				dist.y = 0.0
+				if dist.length() < chase_range:
+					_change_state(AIState.CHASE)
+
+# === CHASE：保持理想距离 + 随机 strafe ===
+func _tick_chase(delta: float) -> void:
+	if not player:
+		return
+	# strafe 方向随机切换
+	_strafe_switch_timer -= delta
+	if _strafe_switch_timer <= 0.0:
+		_strafe_switch_timer = randf_range(1.5, 3.0)
+		_strafe_dir = -_strafe_dir
 
 	var to_player := player.global_position - global_position
 	to_player.y = 0.0
 	var distance := to_player.length()
 
-	# 面向玩家
+	# 路径更新
+	if _path_timer <= 0.0:
+		_path_timer = path_update_interval
+		nav_agent.target_position = player.global_position
+
+	var path_dir := _get_nav_direction()
+	var path_base := path_dir if path_dir != Vector3.ZERO else to_player.normalized()
+
+	if distance > preferred_distance + 2.0:
+		# 太远，靠近
+		_desired_velocity = Vector3(path_base.x * move_speed, -gravity, path_base.z * move_speed)
+	else:
+		# 理想距离，strafe
+		var strafe := path_base.cross(Vector3.UP) * _strafe_dir
+		_desired_velocity = Vector3(strafe.x * move_speed * 0.5, -gravity, strafe.z * move_speed * 0.5)
+
 	_face_direction(to_player)
 
-	# 通过 NavMesh 寻路获取朝玩家的路径方向（可绕墙、跨过 ≤ step_height 的台阶）
-	nav_agent.target_position = player.global_position
-	var path_dir := Vector3.ZERO
-	if not nav_agent.is_navigation_finished():
-		var to_next := nav_agent.get_next_path_position() - global_position
-		to_next.y = 0.0
-		if to_next.length() > 0.1:
-			path_dir = to_next.normalized()
+	# 攻击判定（在理想距离内）
+	if distance < preferred_distance + 3.0 and _can_attack and not _is_attacking:
+		_start_attack()
 
-	# 移动逻辑：保持理想距离
-	if distance < chase_range and not _is_attacking:
-		var path_base := path_dir if path_dir != Vector3.ZERO else to_player.normalized()
-		if distance < too_close_distance:
-			# 太近了，后退
-			velocity.x = -path_base.x * move_speed
-			velocity.z = -path_base.z * move_speed
-		elif distance > preferred_distance + 2.0:
-			# 太远了，靠近
-			velocity.x = path_base.x * move_speed
-			velocity.z = path_base.z * move_speed
-		else:
-			# 在理想距离，横向游走
-			var strafe := path_base.cross(Vector3.UP)
-			velocity.x = strafe.x * move_speed * 0.5
-			velocity.z = strafe.z * move_speed * 0.5
+# === RETREAT：后退 ===
+func _tick_retreat(delta: float) -> void:
+	if not player:
+		return
+	var to_player := player.global_position - global_position
+	to_player.y = 0.0
 
-		# 攻击判定
-		if distance < preferred_distance + 3.0 and _can_attack:
-			_start_attack()
-	else:
-		velocity.x = move_toward(velocity.x, 0.0, move_speed * delta * 5)
-		velocity.z = move_toward(velocity.z, 0.0, move_speed * delta * 5)
+	if _path_timer <= 0.0:
+		_path_timer = path_update_interval
+		nav_agent.target_position = player.global_position
 
-	velocity.y = -gravity
-	move_and_slide()
+	var path_dir := _get_nav_direction()
+	var path_base := path_dir if path_dir != Vector3.ZERO else to_player.normalized()
+	# 反方向后退
+	_desired_velocity = Vector3(-path_base.x * move_speed, -gravity, -path_base.z * move_speed)
+	_face_direction(to_player)
 
-	# T4: 骨骼动画选择器（静止时保持持枪瞄准姿态）
-	_select_animation("holding-right")
+# === ATTACK：保持持枪 + 连射 ===
+func _tick_attack(_delta: float) -> void:
+	_desired_velocity = Vector3(0, -gravity, 0)
+	if not _is_attacking and _can_attack:
+		_start_attack()
 
-## T1: 发动攻击：保持持枪姿态 + 连射（后坐/闪光/音效在 _fire_projectile 内）
 func _start_attack():
 	_is_attacking = true
 	_can_attack = false
 	attack_timer.start()
 	await _fire_burst()
 	_is_attacking = false
+	# 攻击完成后切回 CHASE 或 RETREAT
+	if player:
+		var to_player := player.global_position - global_position
+		to_player.y = 0.0
+		if to_player.length() < too_close_distance:
+			_change_state(AIState.RETREAT)
+		elif _has_los:
+			_change_state(AIState.CHASE)
+		else:
+			_change_state(AIState.IDLE)
+	else:
+		_change_state(AIState.IDLE)
 
 ## 连射
 func _fire_burst():
@@ -135,7 +189,7 @@ func _fire_burst():
 		if i < burst_count - 1:
 			await get_tree().create_timer(burst_interval).timeout
 
-## T1: 发射单个弹幕（从 Muzzle 世界坐标生成，含后坐/闪光/音效）
+## 发射单个弹幕
 func _fire_projectile():
 	if _dead or not player:
 		return
@@ -146,7 +200,6 @@ func _fire_projectile():
 	var projectile_instance = projectile_scene.instantiate()
 
 	var target_pos := player.global_position + Vector3(0, 0.5, 0)
-	# 从枪口 Muzzle 射出（取代身体 ShootPoint）
 	var shoot_origin: Vector3
 	if muzzle:
 		shoot_origin = muzzle.global_position
@@ -154,30 +207,27 @@ func _fire_projectile():
 		shoot_origin = global_position + Vector3(0, 1.0, 0)
 	var shoot_direction := (target_pos - shoot_origin).normalized()
 
-	# 距离衰减散布
 	shoot_direction = CombatUtils.apply_enemy_spread(shoot_direction, enemy_spread, shoot_origin.distance_to(target_pos))
 
 	projectile_instance.direction = shoot_direction
 	projectile_instance.speed = 20.0
 	projectile_instance.damage = attack_damage
 	projectile_instance.max_distance = 35.0
-	projectile_instance.color = Color(0.8, 0.1, 1.0) # 紫色弹幕
+	projectile_instance.color = Color(0.8, 0.1, 1.0)
 	projectile_instance.shooter = self
 
 	get_tree().root.add_child(projectile_instance)
 	projectile_instance.global_position = shoot_origin
 
-	# T1: 枪模型后坐回弹
-	# 枪口在局部 -z（前方），后坐沿 +z（后方）推再回位，叠加于 holding-right 骨骼姿态
+	# 枪模型后坐
 	if gun_instance:
 		var recoil := create_tween()
 		recoil.tween_property(gun_instance, "position:z", gun_instance.position.z + 0.07, 0.05)
 		recoil.tween_property(gun_instance, "position:z", gun_instance.position.z, 0.1)
 
-	# T1: 枪口闪光一次性播放
 	_play_muzzle_flash()
 
-## T1: 枪口闪光
+## 枪口闪光
 func _play_muzzle_flash() -> void:
 	if not gun_instance:
 		return
@@ -187,7 +237,6 @@ func _play_muzzle_flash() -> void:
 	flash.visible = true
 	flash.frame = 0
 	flash.play("default")
-	# 播完后隐藏（3 帧 / 30fps ≈ 0.1s）
 	get_tree().create_timer(0.12).timeout.connect(func():
 		if is_instance_valid(flash):
 			flash.visible = false

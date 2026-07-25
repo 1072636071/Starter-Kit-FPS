@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="btestenemyai06"]
+
+[ext_resource type="Script" path="res://tests/test_enemy_ai.gd" id="1_script"]
+
+[node name="TestEnemyAI" type="Node"]
+script = ExtResource("1_script")

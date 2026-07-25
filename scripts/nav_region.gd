@@ -16,10 +16,11 @@ extends NavigationRegion3D
 func _ready() -> void:
 	if navigation_mesh == null:
 		navigation_mesh = NavigationMesh.new()
-	# agent_max_climb 决定 navmesh 在 ≤step_height 高差处连通，≥step_height 处断开
-	# 引用工单 01 的全局常量，保证与玩家 Auto-Step 共用同一阈值
-	navigation_mesh.agent_max_climb = StepConstants.STEP_HEIGHT
+	# ADR 017：NavMesh 参数优化
+	navigation_mesh.agent_radius = 0.5       # 与怪物碰撞体匹配 + 缓冲
+	navigation_mesh.agent_height = 1.5       # 怪物模型高度
+	navigation_mesh.cell_size = 0.25         # 精度提升（默认 0.3 太粗），路径更贴合墙壁
+	navigation_mesh.agent_max_climb = StepConstants.STEP_HEIGHT  # 统一可通行阈值
+	navigation_mesh.agent_max_slope = 45.0   # 最大斜坡角度
 	# 同步烘焙（false = 不在后台线程，确保怪物 _ready 前 navmesh 就绪）
-	# bake_navigation_mesh() 返回 void，无法捕获错误码；若烘焙失败，navmesh 数据为空，
-	# 怪物寻路时会显现为不可达，可在运行时观察。
 	bake_navigation_mesh(false)
