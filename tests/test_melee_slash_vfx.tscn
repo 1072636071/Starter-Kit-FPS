@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://btestmeleeslash01"]
+[gd_scene format=3 uid="uid://bkg0mf5761q8w"]
 
 [ext_resource type="Script" path="res://tests/test_melee_slash_vfx.gd" id="1_test"]
 
