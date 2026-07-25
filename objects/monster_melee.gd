@@ -2,6 +2,9 @@ extends "res://objects/monster_base.gd"
 ## 近战怪物：追踪玩家并发动骨骼攻击动画
 ## FSM 状态行为覆盖 + 战术散开（ADR 017）
 
+# 预加载 MeleeVFX class_name，确保 headless 模式下全局类注册
+const _MeleeVFX = preload("res://scripts/melee_vfx.gd")
+
 const MONSTER_TYPE: StringName = &"monster_melee"
 
 @export var attack_range: float = 2.0
@@ -11,6 +14,8 @@ const MONSTER_TYPE: StringName = &"monster_melee"
 @export var active_frame_time: float = 0.2
 
 var weapon_instance: Node3D
+# 近战剑弧粒子特效（ADR 020）
+var melee_slash: GPUParticles3D
 
 # 战术散开：环绕偏移角
 var _approach_angle: float = 0.0
@@ -48,6 +53,16 @@ func _ready():
 		weapon_instance.scale = Vector3(1.0, 1.0, 1.0)
 		for child in weapon_instance.find_children("*", "MeshInstance3D", true, false):
 			child.layers = 4
+
+	# 近战剑弧粒子特效：挂在自身节点下，layer 3 主相机可见（ADR 020）
+	# 位置：敌人前方 1.5m、腰部高度（attack_range + 0.8 ≈ 2.8m 命中判定的中心区域）
+	melee_slash = MeleeVFX.create_slash(
+		self,
+		MeleeVFX.COLOR_ENEMY,
+		4, # layer 3: main camera visible
+		MeleeVFX.ENEMY_BOX_EXTENTS,
+		Vector3(0, 0.5, -1.5)
+	)
 
 ## 战术散开：追踪目标 = 玩家位置 + 环绕偏移
 func _get_chase_target() -> Vector3:
@@ -89,6 +104,12 @@ func _start_attack():
 		get_tree().create_timer(0.45).timeout.connect(_on_attack_finished)
 
 	get_tree().create_timer(active_frame_time).timeout.connect(_deal_damage)
+
+	# 活跃帧同步触发剑弧粒子（ADR 020）
+	get_tree().create_timer(active_frame_time).timeout.connect(func():
+		if melee_slash and is_instance_valid(melee_slash):
+			MeleeVFX.trigger(melee_slash)
+	)
 
 func _deal_damage():
 	if _dead or not player:

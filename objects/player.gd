@@ -1,5 +1,8 @@
 extends CharacterBody3D
 
+# 预加载 MeleeVFX class_name，确保 headless 模式下全局类注册
+const _MeleeVFX = preload("res://scripts/melee_vfx.gd")
+
 # === 卡住状态机（ADR 016，issue 05）===
 enum StuckState { NORMAL, STUCK, ESCAPING }
 
@@ -46,6 +49,8 @@ var reload_tween: Tween # T5：换弹期间武器模型的 Tween
 var melee_viewmodel_instance: Node3D
 var melee_cooldown_remaining := 0.0
 var melee_swing_tween: Tween
+# 近战剑弧粒子特效（ADR 020，GPUParticles3D 一次性爆发）
+var melee_slash: GPUParticles3D
 # 过渡动画期间为 true，_process 的 container lerp 跳过以让 Tween 完全控制（ADR 019）
 var _melee_active := false
 # 剑初始变换（_ready 缓存，action_melee 重置基准，防连续挥砍残留）
@@ -131,6 +136,8 @@ var tween: Tween
 signal health_updated
 # 护盾变化信号（参数：当前 shield / shield_max），供 HUD 绘制护盾条（issue 07）
 signal shield_updated(shield: float, shield_max: float)
+# 护盾冷却计时变化信号（参数：当前倒计时秒数），供 HUD 显示冷却倒计时
+signal shield_cooldown_changed(timer: float)
 # 玩家死亡信号（无参数，带 _dead 守卫防重复），由 Game Over UI（issue 06）监听
 signal died
 # 卡住状态变迁信号（ADR 016），供 HUD 显示/隐藏提示
@@ -190,6 +197,17 @@ func _ready():
 		_melee_sword_init_pos = melee_viewmodel_instance.position
 		_melee_sword_init_rot = melee_viewmodel_instance.rotation_degrees
 		_melee_sword_init_scale = melee_viewmodel_instance.scale
+
+		# 近战剑弧粒子特效：挂在 CameraItem 下，layer 2 仅武器相机可见（ADR 020）
+		# 位置映射：MeleeHitbox 在 Player 本地 (0, 0.5, -1.0)，CameraItem 在 Head (0, 1, 0)
+		# → CameraItem 本地 = (0, -0.5, -1.0)，即玩家前方 1m 腰部高度
+		melee_slash = _MeleeVFX.create_slash(
+			camera_item,
+			_MeleeVFX.COLOR_PLAYER,
+			2, # layer 2: weapon camera only
+			_MeleeVFX.PLAYER_BOX_EXTENTS,
+			Vector3(0, -0.5, -1.0)
+		)
 
 	# 命中区深度跟随 melee_reach（@export，可 inspector 调参，见 PRD/CONTEXT「Melee Tuning」）
 	# 复制 BoxShape3D 避免改写场景内联 sub-resource
@@ -583,6 +601,9 @@ func change_weapon():
 
 	for child in weapon_model.find_children("*", "MeshInstance3D"):
 		child.layers = 2
+		# Apply weapon texture if configured (workaround for GLB import texture loss)
+		if weapon.albedo_texture:
+			_apply_texture_to_mesh(child, weapon.albedo_texture)
 
 	# Set weapon data
 
@@ -596,6 +617,22 @@ func change_weapon():
 # 期间：禁射、切枪取消、备弹不足只装可用数
 # 完成：reserve → magazine 转移，emit ammo_updated
 # 视觉：复用 container Tween 让武器移出视野再归位（T5）；HUD 进度条由 HUD 自行驱动
+
+# 确保武器网格的材质上设置了纹理（GLB 导入时纹理可能丢失）
+func _apply_texture_to_mesh(mesh_instance: MeshInstance3D, texture: Texture2D) -> void:
+	var mesh := mesh_instance.mesh
+	if mesh == null:
+		return
+	for i in range(mesh.get_surface_count()):
+		var mat := mesh_instance.get_surface_override_material(i)
+		if mat == null:
+			mat = mesh.surface_get_material(i)
+		if mat == null:
+			continue
+		var dup_mat := mat.duplicate()
+		if dup_mat is StandardMaterial3D:
+			dup_mat.albedo_texture = texture
+		mesh_instance.set_surface_override_material(i, dup_mat)
 
 func action_reload(index: int) -> void:
 	if is_reloading: return
@@ -753,6 +790,8 @@ func action_melee() -> void:
 	get_tree().create_timer(ACTIVE_START).timeout.connect(func():
 		if is_inside_tree():
 			melee_hitbox.monitoring = true
+			if melee_slash:
+				_MeleeVFX.trigger(melee_slash)
 	)
 	# 后摇开始 → 关闭 monitoring（活跃帧结束）
 	get_tree().create_timer(ACTIVE_END).timeout.connect(func():
@@ -811,12 +850,15 @@ func _step_shield_regen(delta: float) -> void:
 	if _dead:
 		return
 	if shield >= shield_max:
+		shield_cooldown_changed.emit(0.0)
 		return
 	if _shield_regen_timer > 0.0:
 		_shield_regen_timer = maxf(0.0, _shield_regen_timer - delta)
+		shield_cooldown_changed.emit(_shield_regen_timer)
 		return
 	shield = minf(shield_max, shield + (shield_regen_rate + shield_regen_rate_bonus) * delta)
 	shield_updated.emit(shield, shield_max)
+	shield_cooldown_changed.emit(0.0)
 
 # 治疗方法（issue 03 共用）：加血不超过 max_health，不影响护盾，不发 damage 管线
 func heal(amount: int) -> void:

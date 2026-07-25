@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://btestmeleeslash01"]
+
+[ext_resource type="Script" path="res://tests/test_melee_slash_vfx.gd" id="1_test"]
+
+[node name="TestMeleeSlashVFX" type="Node"]
+script = ExtResource("1_test")

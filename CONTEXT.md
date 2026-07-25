@@ -99,6 +99,8 @@
 | **Melee Viewmodel Lifecycle（近战视图模型生命周期）** | Melee Viewmodel 在玩家 `_ready()` 中**实例化一次**，作为 `CameraItem` 的子节点（与 `Container` 平级，不在 Container 内——否则会被 `change_weapon()` 的 `remove_child()` 清掉）。初始 `visible = false`，每次挥砍复用同一实例：show → Tween 挥砍 → hide。**不**每次挥砍重新 instantiate。所有 `MeshInstance3D` 的 `layers = 2`（仅武器相机渲染），与 `change_weapon()` 中枪械模型设置方式一致。 |
 | **Melee Swing Sound（挥砍音效）** | v1 **跳过**——`sounds/` 下无合适素材（只有枪声 `blaster*.ogg`、敌人声 `enemy_*.ogg`、移动声 `jump_*.ogg`/`land.ogg`/`walking.ogg`、切枪 `weapon_change.ogg`，无 whoosh/挥砍声）。T3 中的"可选音效"明确为 v1 不做，留待未来增加 `sword_swing.ogg` 类素材后接入。**不**复用现有音效（语义不符，反而破坏手感）。 |
 | **Melee Cooldown Implementation（近战冷却实现）** | 冷却用**浮点累加器**（`melee_cooldown_remaining: float`，在 `_process(delta)` 中递减），**不**新增 Timer 节点。与现有 `_step_reload(delta)` 的 `reload_time_remaining` 同模式。触发挥砍时设 `melee_cooldown_remaining = melee_cooldown`，每帧 `-= delta`，归零方可再次挥砍。避免向 `player.tscn` 添加 Timer 节点，与 `blaster_cooldown` Timer（射击冷却用）解耦。 |
+| **Melee Slash VFX（近战剑弧特效）** | 近战攻击活跃帧期间的**剑弧拖尾粒子特效**（GPUParticles3D 一次性爆发），直观展示攻击范围。参见 [ADR 020](file:///g:/work/Starter-Kit-FPS/docs/adr/020-melee-slash-vfx.md)。玩家：青白色、挂在 `CameraItem` 下（layer 2，仅第一人称可见）；敌人：红橙色、挂在怪物自身节点下（layer 3，主相机可见）。30 粒子、0.2s 生命周期、additive 发光。由 `MeleeVFX` 静态类（[scripts/melee_vfx.gd](file:///g:/work/Starter-Kit-FPS/scripts/melee_vfx.gd)）统一管理创建与触发。 |
+| **MeleeVFX（近战特效工具类）** | 静态工具类 `MeleeVFX`（[scripts/melee_vfx.gd](file:///g:/work/Starter-Kit-FPS/scripts/melee_vfx.gd)），提供 `create_slash(parent, color, layer, box_extents, local_pos) -> GPUParticles3D` 和 `trigger(particles)` 两个静态方法。统一玩家和敌人的剑弧粒子创建与触发逻辑，避免重复配置代码。 |
 
 ## 怪物武器与动画（Monster Weapons & Animation）
 

@@ -6,6 +6,7 @@ class_name Weapon
 @export var position: Vector3 # On-screen position
 @export var rotation: Vector3 # On-screen rotation
 @export var muzzle_position: Vector3 # On-screen position of muzzle flash
+@export var albedo_texture: Texture2D # Weapon texture (workaround for GLB import texture loss)
 
 @export_subgroup("Properties")
 @export_range(0.1, 1) var cooldown: float = 0.1 # Firerate

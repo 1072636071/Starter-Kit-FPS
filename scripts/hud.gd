@@ -18,10 +18,15 @@ var _reload_tween: Tween
 
 # issue 07：肉鸽竞技场 HUD 扩展
 var _run_director: Node
+var _player: Node
 var _wave_number: int = 0
 
 @onready var _list: VBoxContainer = _build_list()
-@onready var _shield_bar: ProgressBar = _build_shield_bar()
+@onready var _shield_container: Control = _build_shield_container()
+@onready var _shield_bar: ProgressBar
+@onready var _shield_text: Label
+@onready var _shield_cooldown_label: Label
+@onready var _shield_rate_label: Label
 @onready var _info_label: Label = _build_info_label()
 @onready var _wave_prompt: Label = _build_wave_prompt()
 @onready var _chest_prompt: Label = _build_chest_prompt()
@@ -30,7 +35,7 @@ var _wave_number: int = 0
 func _ready() -> void:
 	add_child(_list)
 	# issue 07：新增 HUD 元素
-	add_child(_shield_bar)
+	add_child(_shield_container)
 	add_child(_info_label)
 	add_child(_wave_prompt)
 	add_child(_chest_prompt)
@@ -47,6 +52,7 @@ func _bind_player() -> void:
 		return
 	if not player.has_signal("ammo_updated"):
 		return
+	_player = player
 	_weapons = player.weapons
 	_build_rows()
 	player.ammo_updated.connect(_on_ammo_updated)
@@ -55,6 +61,12 @@ func _bind_player() -> void:
 	# issue 05：卡住状态信号
 	if player.has_signal("stuck_state_changed"):
 		player.stuck_state_changed.connect(_on_stuck_state_changed)
+	# 护盾 HUD 信号
+	player.shield_updated.connect(_on_shield_updated)
+	player.shield_cooldown_changed.connect(_on_shield_cooldown_changed)
+	# 初始护盾显示
+	_on_shield_updated(player.shield, player.shield_max)
+	_shield_rate_label.text = "%.0f/s" % (player.shield_regen_rate + player.shield_regen_rate_bonus)
 	# 用 player 当前快照做首次渲染
 	_on_ammo_updated(player.weapon_index, player.magazine.duplicate(), player.reserve.duplicate())
 
@@ -207,6 +219,18 @@ func _on_kills_changed(count: int) -> void:
 func _on_shield_updated(shield: float, shield_max: float) -> void:
 	_shield_bar.max_value = shield_max
 	_shield_bar.value = shield
+	_shield_text.text = "%.0f / %.0f" % [shield, shield_max]
+
+func _on_shield_cooldown_changed(timer: float) -> void:
+	if timer > 0.0:
+		_shield_cooldown_label.visible = true
+		_shield_cooldown_label.text = "%.1fs" % timer
+		# 冷却中护盾条变灰
+		_shield_bar.add_theme_stylebox_override("fill", _shield_style_cooldown)
+	else:
+		_shield_cooldown_label.visible = false
+		# 恢复蓝色
+		_shield_bar.add_theme_stylebox_override("fill", _shield_style_normal)
 
 # ============================================================
 # issue 07：公共更新方法（暂停态 UI 显式调用刷新）
@@ -238,21 +262,83 @@ func _refresh_info_label() -> void:
 # issue 07：新增 HUD 元素构建
 # ============================================================
 
-func _build_shield_bar() -> ProgressBar:
-	var bar := ProgressBar.new()
-	bar.offset_left = 48.0
-	bar.offset_top = 596.0
-	bar.offset_right = 248.0
-	bar.offset_bottom = 618.0
-	bar.min_value = 0.0
-	bar.max_value = 50.0
-	bar.value = 50.0
-	bar.show_percentage = false
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.15, 0.5, 0.85, 0.9)
-	bar.add_theme_stylebox_override("fill", sb)
-	return bar
+# 护盾条样式（正常蓝色 / 冷却灰色）
+var _shield_style_normal: StyleBoxFlat
+var _shield_style_cooldown: StyleBoxFlat
+
+func _build_shield_container() -> Control:
+	var container := Control.new()
+	container.name = "ShieldContainer"
+	container.offset_left = 8.0
+	container.offset_top = 596.0
+	container.offset_right = 320.0
+	container.offset_bottom = 620.0
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 左侧冷却倒计时标签
+	_shield_cooldown_label = Label.new()
+	_shield_cooldown_label.name = "ShieldCooldown"
+	_shield_cooldown_label.offset_left = 0.0
+	_shield_cooldown_label.offset_top = 2.0
+	_shield_cooldown_label.offset_right = 55.0
+	_shield_cooldown_label.offset_bottom = 22.0
+	_shield_cooldown_label.add_theme_font_size_override("font_size", 14)
+	_shield_cooldown_label.add_theme_color_override("font_color", Color(1, 0.6, 0.2, 1))
+	_shield_cooldown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_shield_cooldown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_shield_cooldown_label.visible = false
+	_shield_cooldown_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(_shield_cooldown_label)
+
+	# 护盾 ProgressBar
+	_shield_bar = ProgressBar.new()
+	_shield_bar.name = "ShieldBar"
+	_shield_bar.offset_left = 58.0
+	_shield_bar.offset_top = 0.0
+	_shield_bar.offset_right = 258.0
+	_shield_bar.offset_bottom = 22.0
+	_shield_bar.min_value = 0.0
+	_shield_bar.max_value = 50.0
+	_shield_bar.value = 50.0
+	_shield_bar.show_percentage = false
+	_shield_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shield_style_normal = StyleBoxFlat.new()
+	_shield_style_normal.bg_color = Color(0.15, 0.5, 0.85, 0.9)
+	_shield_style_cooldown = StyleBoxFlat.new()
+	_shield_style_cooldown.bg_color = Color(0.35, 0.35, 0.35, 0.9)
+	_shield_bar.add_theme_stylebox_override("fill", _shield_style_normal)
+	container.add_child(_shield_bar)
+
+	# 条内文字（叠加在 ProgressBar 上）
+	_shield_text = Label.new()
+	_shield_text.name = "ShieldText"
+	_shield_text.offset_left = 58.0
+	_shield_text.offset_top = 0.0
+	_shield_text.offset_right = 258.0
+	_shield_text.offset_bottom = 22.0
+	_shield_text.add_theme_font_size_override("font_size", 18)
+	_shield_text.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	_shield_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shield_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_shield_text.text = "50 / 50"
+	_shield_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(_shield_text)
+
+	# 右侧充能速率标签
+	_shield_rate_label = Label.new()
+	_shield_rate_label.name = "ShieldRate"
+	_shield_rate_label.offset_left = 262.0
+	_shield_rate_label.offset_top = 2.0
+	_shield_rate_label.offset_right = 312.0
+	_shield_rate_label.offset_bottom = 22.0
+	_shield_rate_label.add_theme_font_size_override("font_size", 14)
+	_shield_rate_label.add_theme_color_override("font_color", Color(0.6, 0.8, 1, 1))
+	_shield_rate_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_shield_rate_label.text = "10/s"
+	_shield_rate_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(_shield_rate_label)
+
+	return container
 
 func _build_info_label() -> Label:
 	var l := Label.new()

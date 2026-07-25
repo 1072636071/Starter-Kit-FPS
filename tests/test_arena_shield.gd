@@ -130,6 +130,82 @@ func _run_tests() -> void:
 	_check(float(player_g.get("shield")) > 30.0,
 		"shield regen started after delay (got %f, expected > 30)" % float(player_g.get("shield")))
 
+	# === Player H：shield_cooldown_changed 信号在三种状态下正确发射 ===
+	var player_h: CharacterBody3D = player_scene.instantiate()
+	add_child(player_h)
+	player_h.set("shield_regen_delay", 0.5)
+	_counters["cooldown_h"] = []
+	player_h.shield_cooldown_changed.connect(func(t: float): (_counters["cooldown_h"] as Array).append(t))
+
+	# 状态 1：满盾 → timer 应为 0.0
+	player_h.call("_step_shield_regen", 0.0)
+	var arr_h: Array = _counters["cooldown_h"] as Array
+	_check(arr_h.size() > 0,
+		"shield_cooldown_changed emitted when shield full (got %d)" % arr_h.size())
+	if arr_h.size() > 0:
+		_check(abs(arr_h.back() as float) < 0.01,
+			"shield_cooldown_changed emits 0.0 when shield full (got %f)" % (arr_h.back() as float))
+
+	# 状态 2：受击后 → timer 应重置为 shield_regen_delay
+	_counters["cooldown_h"] = []
+	player_h.damage(10.0)  # shield 40
+	player_h.call("_step_shield_regen", 0.016)
+	arr_h = _counters["cooldown_h"] as Array
+	_check(arr_h.size() > 0,
+		"shield_cooldown_changed emitted after damage (got %d)" % arr_h.size())
+	if arr_h.size() > 0:
+		var t = arr_h.back() as float
+		_check(t > 0.0 and t <= 0.5,
+			"shield_cooldown_changed timer set on damage (got %f, expected ~0.5)" % t)
+
+	# 状态 3：推进时间 → timer 递减
+	_counters["cooldown_h"] = []
+	player_h.call("_step_shield_regen", 0.2)
+	arr_h = _counters["cooldown_h"] as Array
+	_check(arr_h.size() > 0,
+		"shield_cooldown_changed emits during cooldown (got %d)" % arr_h.size())
+	if arr_h.size() > 0:
+		var t2 = arr_h.back() as float
+		_check(t2 < 0.5 and t2 > 0.0,
+			"shield_cooldown_changed timer decrements (got %f)" % t2)
+
+	# 状态 4：冷却结束 → timer 归零
+	_counters["cooldown_h"] = []
+	player_h.call("_step_shield_regen", 0.5)  # 推进足够过 delay
+	arr_h = _counters["cooldown_h"] as Array
+	_check(arr_h.size() > 0,
+		"shield_cooldown_changed emitted after cooldown (got %d)" % arr_h.size())
+	if arr_h.size() > 0:
+		_check(abs(arr_h.back() as float) < 0.01,
+			"shield_cooldown_changed emits 0.0 after cooldown ends (got %f)" % (arr_h.back() as float))
+
+	# === Player I：升级 bonus 影响充能速率但不影响冷却延时 ===
+	var player_i: CharacterBody3D = player_scene.instantiate()
+	add_child(player_i)
+	player_i.set("shield_regen_delay", 0.3)
+	player_i.set("shield_regen_rate", 10.0)
+	player_i.set("shield_regen_rate_bonus", 5.0)  # 有效速率 = 15/s
+	player_i.damage(30.0)  # shield 20
+
+	# 冷却延时不应受 bonus 影响
+	_counters["cooldown_i"] = []
+	player_i.shield_cooldown_changed.connect(func(t: float): (_counters["cooldown_i"] as Array).append(t))
+	player_i.call("_step_shield_regen", 0.016)
+	var arr_i: Array = _counters["cooldown_i"] as Array
+	_check(arr_i.size() > 0,
+		"shield_cooldown_changed emitted with bonus (got %d)" % arr_i.size())
+	if arr_i.size() > 0:
+		_check(abs(arr_i[0] as float - 0.3) < 0.05,
+			"cooldown timer = delay regardless of bonus (got %f, expected ~0.3)" % (arr_i[0] as float))
+
+	# 冷却结束后，充能速率应为 15/s（10 + 5 bonus）
+	player_i.call("_step_shield_regen", 0.5)  # 过 0.3s delay，timer 归零
+	player_i.call("_step_shield_regen", 0.2)  # 充能 0.2s
+	var shield_i: float = float(player_i.get("shield"))
+	# 充能 0.2s × 15/s = 3.0 → shield ≈ 23.0
+	_check(shield_i > 22.0 and shield_i < 24.0,
+		"regen rate includes bonus (shield=%f, expected ~23 after 0.2s @ 15/s)" % shield_i)
+
 	if failures == 0:
 		print("[TEST] PASS — arena issue 01 shield layer + died signal")
 		get_tree().quit(0)
