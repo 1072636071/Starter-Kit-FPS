@@ -23,6 +23,9 @@ var _strafe_dir: float = 1.0
 var _strafe_switch_timer: float = 0.0
 const STRAFE_SWITCH_INTERVAL := 2.5
 
+# 连锁 Aggro：怪物开枪的 alert 传播半径
+const SHOOT_ALERT_RADIUS := 25.0
+
 func _monster_type() -> StringName:
 	return MONSTER_TYPE
 
@@ -39,6 +42,8 @@ func _ready():
 	attack_damage = 8.0
 	attack_cooldown = 1.8
 	health = 80.0
+	# 远程怪视力更好（被动感知范围 12m vs 近战 8m）
+	awareness_range = 12.0
 	super._ready()
 
 	# 随机 strafe 方向
@@ -81,8 +86,10 @@ func _evaluate_transitions() -> void:
 
 	match _ai_state:
 		AIState.IDLE:
-			# IDLE → CHASE：只用距离触发，不要求视线
-			if distance < chase_range:
+			# IDLE → CHASE：被动感知（awareness_range 内 + 视线）或警觉传播（alert 穿墙）
+			if distance < awareness_range and _has_los:
+				_change_state(AIState.CHASE)
+			elif AlertSystem.has_alert_nearby(global_position, chase_range):
 				_change_state(AIState.CHASE)
 		AIState.CHASE:
 			if not _has_los:
@@ -196,6 +203,9 @@ func _fire_projectile():
 		return
 
 	Audio.play("sounds/enemy_attack.ogg")
+
+	# 连锁 Aggro：怪物开枪 emit alert（穿墙）
+	AlertSystem.emit_alert(global_position, SHOOT_ALERT_RADIUS)
 
 	var projectile_scene = preload("res://objects/projectile.tscn")
 	var projectile_instance = projectile_scene.instantiate()

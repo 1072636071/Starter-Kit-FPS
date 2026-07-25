@@ -32,6 +32,8 @@ func _ready():
 	attack_damage = 15.0
 	attack_cooldown = 1.2
 	health = 120.0
+	# 近战怪被动感知 8m（基类默认，显式设置以明确意图）
+	awareness_range = 8.0
 	super._ready()
 
 	# 战术散开角度

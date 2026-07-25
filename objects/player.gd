@@ -46,9 +46,9 @@ var reload_tween: Tween # T5：换弹期间武器模型的 Tween
 var melee_viewmodel_instance: Node3D
 var melee_cooldown_remaining := 0.0
 var melee_swing_tween: Tween
-const SWING_DURATION := 0.4 # 总挥砍时长，必须 ≤ melee_cooldown
-const ACTIVE_START := 0.1   # monitoring 开启时机（前摇结束）
-const ACTIVE_END := 0.3     # monitoring 关闭时机（后摇开始）
+const SWING_DURATION := 0.6 # 总挥砍时长，必须 ≤ melee_cooldown（见 ADR 018）
+const ACTIVE_START := 0.2   # monitoring 开启时机（前摇结束）
+const ACTIVE_END := 0.4     # monitoring 关闭时机（后摇开始）
 # 下劈动画相对锚点的偏移：前摇举到右上，活跃帧 = -2× 偏移划到左下形成下劈弧线
 const WINDUP_ROT := Vector3(-60, 30, 60)
 const WINDUP_POS := Vector3(0.2, 0.2, 0.0)
@@ -110,6 +110,9 @@ const DEFAULT_FOV := 75.0
 const AIM_FOV := 60.0
 const ADS_SPEED_FACTOR := 0.7
 const ADS_SPREAD_FACTOR := 0.5
+
+# 连锁 Aggro：玩家开枪的 alert 传播半径
+const SHOOT_ALERT_RADIUS := 30.0
 
 var is_aiming := false
 
@@ -469,6 +472,9 @@ func action_shoot():
 			return
 
 		Audio.play(weapon.sound_shoot)
+
+		# 连锁 Aggro：玩家开枪 emit alert（穿墙传播，惊动远处 IDLE 怪物）
+		AlertSystem.emit_alert(global_position, SHOOT_ALERT_RADIUS)
 
 		# Set muzzle flash position, play animation
 

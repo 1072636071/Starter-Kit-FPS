@@ -26,6 +26,7 @@ config/icon="res://icon.png"
 
 Audio="*res://scripts/audio.gd"
 StepConstants="*res://scripts/step_constants.gd"
+AlertSystem="*res://scripts/alert_system.gd"
 
 [display]
 

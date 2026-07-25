@@ -12,6 +12,9 @@ enum AIState { IDLE, CHASE, ATTACK, RETREAT, LOST }
 @export var attack_damage: float = 10.0
 @export var attack_cooldown: float = 1.5
 @export var health: float = 100.0
+## 被动感知半径：怪物在 IDLE 态下能直接看到很近的玩家的距离
+## （不穿墙，用视线检测）。子类覆盖：近战 8m、远程 12m。
+@export var awareness_range: float = 8.0
 
 var gravity: float = 0.0
 var _dead := false
@@ -41,6 +44,9 @@ var _look_yaw_dir: float = 1.0
 var _path_timer: float = 0.0
 var path_update_interval: float = 0.3
 var _path_timer_offset: float = 0.0
+
+# 连锁 Aggro：死亡时 emit alert 的传播半径
+const DEATH_ALERT_RADIUS := 20.0
 
 # 出生序号（由 RunDirector 刷怪时设置，用于错帧和战术散开）
 var spawn_index: int = 0
@@ -159,7 +165,7 @@ func _physics_process(delta: float) -> void:
 		_los_timer = LOS_INTERVAL
 		_update_los()
 
-	# 状态转换评估
+	# 状态转换评估（内部会查 alert，仅 IDLE 态生效）
 	_evaluate_transitions()
 
 	# 当前状态 tick
@@ -206,8 +212,11 @@ func _evaluate_transitions() -> void:
 
 	match _ai_state:
 		AIState.IDLE:
-			# IDLE → CHASE：只用距离触发，不要求视线（竞技场设计：怪物感知到玩家就追）
-			if distance < chase_range:
+			# IDLE → CHASE：被动感知（awareness_range 内直接看到）或警觉传播（alert 事件）
+			# 被动感知仍走视线检测（不穿墙），警觉传播穿墙（声音）
+			if distance < awareness_range and _has_los:
+				_change_state(AIState.CHASE)
+			elif AlertSystem.has_alert_nearby(global_position, chase_range):
 				_change_state(AIState.CHASE)
 		AIState.CHASE:
 			if not _has_los:
@@ -379,6 +388,8 @@ func _monster_type() -> StringName:
 func destroy():
 	Audio.play("sounds/enemy_destroy.ogg")
 	_dead = true
+	# 连锁 Aggro：死亡时 emit alert，惊动附近 IDLE 怪物
+	AlertSystem.emit_alert(global_position, DEATH_ALERT_RADIUS)
 	# 关闭 RVO（避免死亡后仍参与避障）
 	if nav_agent:
 		nav_agent.avoidance_enabled = false
