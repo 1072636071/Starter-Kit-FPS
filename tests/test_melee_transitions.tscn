@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://btestmeleetrans01"]
+
+[ext_resource type="Script" path="res://tests/test_melee_transitions.gd" id="1_test"]
+
+[node name="TestMeleeTransitions" type="Node"]
+script = ExtResource("1_test")

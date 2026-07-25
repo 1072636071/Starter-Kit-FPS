@@ -23,7 +23,7 @@ enum StuckState { NORMAL, STUCK, ESCAPING }
 
 @export_subgroup("Melee")
 @export var melee_damage: float = 40.0
-@export var melee_cooldown: float = 0.5
+@export var melee_cooldown: float = 0.7
 @export var melee_reach: float = 2.0
 @export var melee_viewmodel: PackedScene
 
@@ -46,12 +46,21 @@ var reload_tween: Tween # T5：换弹期间武器模型的 Tween
 var melee_viewmodel_instance: Node3D
 var melee_cooldown_remaining := 0.0
 var melee_swing_tween: Tween
-const SWING_DURATION := 0.6 # 总挥砍时长，必须 ≤ melee_cooldown（见 ADR 018）
+# 过渡动画期间为 true，_process 的 container lerp 跳过以让 Tween 完全控制（ADR 019）
+var _melee_active := false
+# 剑初始变换（_ready 缓存，action_melee 重置基准，防连续挥砍残留）
+var _melee_sword_init_pos: Vector3
+var _melee_sword_init_rot: Vector3
+const SWING_DURATION := 0.6 # 总挥砍时长，必须 ≤ melee_cooldown（见 ADR 019）
 const ACTIVE_START := 0.2   # monitoring 开启时机（前摇结束）
 const ACTIVE_END := 0.4     # monitoring 关闭时机（后摇开始）
 # 下劈动画相对锚点的偏移：前摇举到右上，活跃帧 = -2× 偏移划到左下形成下劈弧线
 const WINDUP_ROT := Vector3(-60, 30, 60)
 const WINDUP_POS := Vector3(0.2, 0.2, 0.0)
+# 过渡动画偏移（ADR 019）：剑从屏外起点滑入到 windup 终点，outro 反向
+const INTRO_POS_OFFSET := Vector3(0.5, 0.5, 0.0)
+const INTRO_ROT_OFFSET := Vector3(-30, 0, 30)
+const GUN_DROP_Y := -1.0 # 枪 Container 下沉量（相对其初始 y）
 # 当前挥砍已结算的敌人集合（每次挥砍重置），用实例 id 去重
 var melee_hit_targets: Dictionary = {}
 
@@ -176,6 +185,9 @@ func _ready():
 		# 与 change_weapon() 中枪械模型一致：仅武器相机可见（layer 2）
 		for child in melee_viewmodel_instance.find_children("*", "MeshInstance3D"):
 			child.layers = 2
+		# 缓存剑初始变换（ADR 019 防漂移/连续挥砍重置基准，挥砍中不被动）
+		_melee_sword_init_pos = melee_viewmodel_instance.position
+		_melee_sword_init_rot = melee_viewmodel_instance.rotation_degrees
 
 	# 命中区深度跟随 melee_reach（@export，可 inspector 调参，见 PRD/CONTEXT「Melee Tuning」）
 	# 复制 BoxShape3D 避免改写场景内联 sub-resource
@@ -242,7 +254,9 @@ func _process(delta):
 	handle_controls(delta)
 
 	# 武器模型位置（帧率无关 lerp）
-	container.position = lerp(container.position, container_offset - (basis.inverse() * velocity / 30), 1.0 - exp(-10.0 * delta))
+	# 近战挥砍期间跳过 lerp，让过渡 Tween 完全控制 container.position（ADR 019）
+	if not _melee_active:
+		container.position = lerp(container.position, container_offset - (basis.inverse() * velocity / 30), 1.0 - exp(-10.0 * delta))
 
 	# 脚步声
 	sound_footsteps.stream_paused = true
@@ -659,32 +673,70 @@ func action_melee() -> void:
 
 	melee_cooldown_remaining = melee_cooldown
 
-	# 显示 viewmodel
-	melee_viewmodel_instance.visible = true
-
 	# 杀掉旧 Tween（防连续挥砍叠加）
 	if melee_swing_tween and melee_swing_tween.is_valid():
 		melee_swing_tween.kill()
 
-	# 下劈动画：剑从右上→左下，分三段对应前摇/活跃帧/后摇
-	# 同时 tween rotation_degrees 与 position（见 CONTEXT.md「Swing Animation Style」）
-	# 注：to_val 在 tween_property 调用时求值（非 step 启动时），故三步均以 start_* 为基准
+	# 缓存挥砍前变换（防漂移基准，ADR 019 防漂移保障）
+	# 用 _ready 缓存的剑初始值（非当前值，防连续挥砍 kill 后残留）
+	var sword_start_rot: Vector3 = _melee_sword_init_rot
+	var sword_start_pos: Vector3 = _melee_sword_init_pos
+	# 枪归位目标用 container_offset（_process lerp 的目标，挥砍结束后维持）
+	var gun_start_pos: Vector3 = container_offset
+
+	# 强制重置到初始值（防连续挥砍残留：kill 后剑/枪可能停在过渡中途）
+	melee_viewmodel_instance.rotation_degrees = sword_start_rot
+	melee_viewmodel_instance.position = sword_start_pos
+	container.position = gun_start_pos
+
+	# 显示 viewmodel + 标记过渡活跃（跳过 _process 的 container lerp）
+	melee_viewmodel_instance.visible = true
+	_melee_active = true
+
+	# 过渡动画 Tween 链（ADR 019）：
+	# 段1 前摇(0.2s 并行)：枪下沉 + 剑从屏外滑入 windup 终点
+	# 段2 活跃帧(0.2s)：剑下劈（枪保持下沉位）
+	# 段3 后摇(0.2s 并行)：剑滑出屏外 + 枪回升复位
+	# 收尾：剑隐藏 + _melee_active=false + 剑变换复位
 	var tween := get_tree().create_tween()
 	melee_swing_tween = tween
-	var start_rotation := melee_viewmodel_instance.rotation_degrees
-	var start_position := melee_viewmodel_instance.position
 
-	# 前摇 0.1s：从锚点举到右上（蓄力）
-	tween.tween_property(melee_viewmodel_instance, "rotation_degrees", start_rotation + WINDUP_ROT, 0.1)
-	tween.parallel().tween_property(melee_viewmodel_instance, "position", start_position + WINDUP_POS, 0.1)
-	# 活跃帧 0.2s：从右上划到左下（target = start - 2× WINDUP 形成下劈弧线）
-	tween.tween_property(melee_viewmodel_instance, "rotation_degrees", start_rotation - WINDUP_ROT * 2, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "position", start_position - WINDUP_POS * 2, 0.2)
-	# 后摇 0.1s：复位
-	tween.tween_property(melee_viewmodel_instance, "rotation_degrees", start_rotation, 0.1)
-	tween.parallel().tween_property(melee_viewmodel_instance, "position", start_position, 0.1)
-	# 收尾：隐藏
-	tween.tween_callback(func(): melee_viewmodel_instance.visible = false)
+	# 屏外起点（windup 终点再往右上方推）
+	var intro_pos := sword_start_pos + WINDUP_POS + INTRO_POS_OFFSET
+	var intro_rot := sword_start_rot + WINDUP_ROT + INTRO_ROT_OFFSET
+	# windup 终点
+	var windup_pos := sword_start_pos + WINDUP_POS
+	var windup_rot := sword_start_rot + WINDUP_ROT
+	# 下劈终点（活跃帧）
+	var slash_pos := sword_start_pos - WINDUP_POS * 2
+	var slash_rot := sword_start_rot - WINDUP_ROT * 2
+
+	# 段1：前摇 0.2s（并行：枪下沉 + 剑滑入）
+	# 先瞬移剑到屏外起点，再 tween 到 windup 终点
+	melee_viewmodel_instance.position = intro_pos
+	melee_viewmodel_instance.rotation_degrees = intro_rot
+	tween.tween_property(container, "position",
+		Vector3(gun_start_pos.x, gun_start_pos.y + GUN_DROP_Y, gun_start_pos.z), 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", windup_pos, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", windup_rot, 0.2)
+
+	# 段2：活跃帧 0.2s（剑下劈，枪保持）
+	tween.tween_property(melee_viewmodel_instance, "position", slash_pos, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", slash_rot, 0.2)
+
+	# 段3：后摇 0.2s（并行：剑滑出屏外 + 枪回升）
+	tween.tween_property(container, "position", gun_start_pos, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", intro_pos, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", intro_rot, 0.2)
+
+	# 收尾：隐藏剑 + 释放 _melee_active + 复位剑变换到 start
+	#（intro_pos 不是 start，需显式复位防漂移）
+	tween.tween_callback(func():
+		melee_viewmodel_instance.visible = false
+		melee_viewmodel_instance.position = sword_start_pos
+		melee_viewmodel_instance.rotation_degrees = sword_start_rot
+		_melee_active = false
+	)
 
 	# 命中区 monitoring 切换：用 create_timer 与挥砍 Tween 解耦
 	# 理由：若用 tween_callback，挥砍 Tween 被 kill（连续挥砍）时回调不触发，monitoring 可能滞留

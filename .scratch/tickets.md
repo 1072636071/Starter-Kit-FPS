@@ -19,6 +19,7 @@
 | 城市地图管线 | `.scratch/city-editor/`（issues/） |
 | 受击反馈 Hit Flash | `.scratch/hit-feedback/`（issues/） |
 | 玩家近战系统 | `.scratch/melee/`（PRD.md + issues/） |
+| 近战挥砍过渡动画 | `.scratch/melee-transitions/`（issue.md，单 issue；ADR 019 为设计依据） |
 | 小地图系统 | `.scratch/minimap/`（issues/，无 PRD；ADR 007 为设计依据） |
 | 竞技场可玩性修复 | `.scratch/arena-fixes/`（PRD.md + issues/） |
 

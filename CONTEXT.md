@@ -88,11 +88,12 @@
 | **Melee Viewmodel（近战视图模型）** | 近战剑的视图模型（viewmodel），采用**瞬态**方式：平时隐藏，仅在按下近战键的挥砍动画期间显示并随手臂摆动，动画结束自动收回隐藏。与常驻的枪械视图模型（`CameraItem/Container` 内）互不干扰。模型来源为 `quaternius_swords.glb`（需导入项目，建议置于 `models/`）。 |
 | **Melee Hitbox（近战命中区）** | 玩家正前方的 `Area3D` 命中区，仅在挥砍动画的"活跃帧"开启 `monitoring`，通过 `get_overlapping_bodies()` 收集命中怪物，每个敌人**每次挥砍只结算一次伤害**（用 `Set` 去重）。命中后调用怪物的 `damage(melee_damage)` 接口。**注：** 与 `monster_melee` 原 `HitArea` 节点同名但实现模式不同——`monster_melee` 的 HitArea 是死代码（已于 T2 删除），玩家近战才是项目内 Area3D 命中区模式的首个真实用例。 |
 | **Melee Hitbox Orientation（命中区朝向）** | Melee Hitbox 挂在 **Player 根节点**下（不是 Camera），故**只跟随玩家 yaw（水平转向），不跟随相机 pitch（俯仰）**——命中区始终保持水平 slab 形态。定位：中心 `Vector3(0, 0.5, -1.0)`（前方 1m、腰部高度），`BoxShape3D(1.5, 1.5, 2.0)`（宽×高×深），世界坐标覆盖 y∈[0.25, 1.75]。**理由：** 近战短射程+0.5s 冷却下可预测性优于技巧表达；与射击系统（用相机方向+散布做瞄准技巧）差异化才有辨识度；飞行敌人高度本就常超出 1.5m 盒子，pitch 跟踪也未必够得着。被否决的替代：挂在 Camera 下随 pitch 倾斜（盒子会穿地板、多怪叠层误砍），或 pitch-clamped 折中（实现复杂阈值难调）。 |
-| **Melee Tuning（近战调参）** | 初版手感参数（均为 `@export`，可随时调）：`melee_damage = 40`（高于枪械单发，补偿短射程）、`melee_cooldown = 0.5s`（一次挥砍节奏）、`melee_reach = 2.0m`（命中区前向深度，与 `monster_melee.attack_range` 一致）、命中区宽度/高度约 `1.5m`（覆盖身前一小片，非全向）。 |
+| **Melee Tuning（近战调参）** | 初版手感参数（均为 `@export`，可随时调）：`melee_damage = 40`（高于枪械单发，补偿短射程）、`melee_cooldown = 0.7s`（一次挥砍节奏，见 ADR 019）、`melee_reach = 2.0m`（命中区前向深度，与 `monster_melee.attack_range` 一致）、命中区宽度/高度约 `1.5m`（覆盖身前一小片，非全向）。 |
 | **Melee Action（近战输入）** | 新增的独立输入动作，动作名 `melee`，默认绑定 **V 键**（已核查 `project.godot`：W/A/S/D、Space、E、R 已占用，V 空闲无冲突）。与 `shoot`/`aim`/`reload`/`weapon_toggle` 完全解耦，单独触发近战挥砍。 |
-| **Swing Duration（挥砍总时长）** | 一次挥砍动画从开始到结束的总时长，**0.4s**。必须 ≤ `melee_cooldown`（0.5s），留 0.1s 缓冲避免挥砍未结束冷却已就绪导致的节奏冲突。 |
-| **Active Frames（活跃帧）** | 挥砍动画中**Melee Hitbox 的 `monitoring` 开启、可造成伤害的时间窗**，从挥砍启动后 **0.1s** 到 **0.3s**（共 0.2s）。0–0.1s 为"举剑蓄力"前摇（无伤害），0.3–0.4s 为"收剑"后摇（伤害窗口已过）。monitoring 切换由 `SceneTree.create_timer()` 在 0.1s 开启、0.3s 关闭，**与挥砍 Tween 解耦**——这样挥砍 Tween 被 `kill()`（连续挥砍）时 monitoring 切换仍按时执行，避免 `tween_callback` 因 Tween 被杀而不触发、导致 monitoring 滞留。viewmodel 隐藏仍由 Tween 的 `tween_callback` 在 0.4s 收尾。 |
-| **Swing Animation Style（挥砍动画样式）** | 采用**下劈（Downward Slash）**：剑从右上向左下划过屏幕。前摇 0.1s 把剑举到右上 → 活跃帧 0.2s 划到左下 → 后摇 0.1s 收回隐藏。用单个 Tween 同时 tween `rotation_degrees` 和 `position` 实现，无 AnimationPlayer 依赖。**选此方案的理由：** 第一人称视角下下劈视觉冲击最强（剑尖从视野上方划到下方）；与"挥砍"语义最贴合（横扫视觉弱、突刺像长矛）；与 Q1 时间窗天然契合。被否决的替代：横扫（FP 下视觉弱）、突刺（不像剑）、左右交替变体（v1 不必要）。 |
+| **Swing Duration（挥砍总时长）** | 一次挥砍动画从开始到结束的总时长，**0.6s**（ADR 019 从 0.4s 拉长）。必须 ≤ `melee_cooldown`（0.7s），留 0.1s 缓冲避免挥砍未结束冷却已就绪导致的节奏冲突。 |
+| **Active Frames（活跃帧）** | 挥砍动画中**Melee Hitbox 的 `monitoring` 开启、可造成伤害的时间窗**，从挥砍启动后 **0.2s** 到 **0.4s**（共 0.2s，ADR 019 时序）。0–0.2s 为"举剑蓄力+剑滑入"前摇（无伤害），0.4–0.6s 为"剑滑出+收剑"后摇（伤害窗口已过）。monitoring 切换由 `SceneTree.create_timer()` 在 0.2s 开启、0.4s 关闭，**与挥砍 Tween 解耦**——这样挥砍 Tween 被 `kill()`（连续挥砍）时 monitoring 切换仍按时执行，避免 `tween_callback` 因 Tween 被杀而不触发、导致 monitoring 滞留。viewmodel 隐藏仍由 Tween 的 `tween_callback` 在 0.6s 收尾。 |
+| **Melee Viewmodel Transition（近战视图模型过渡）** | 挥砍期间枪与剑的协同过渡动画（ADR 019）：前摇段并行——枪械 Container `position.y` 下沉 `GUN_DROP_Y=-1.0` 出屏底部、剑 viewmodel 从屏外起点（`WINDUP_POS+INTRO_POS_OFFSET` / `WINDUP_ROT+INTRO_ROT_OFFSET`）滑入到 windup 终点；活跃帧段——剑下劈、枪保持下沉位；后摇段并行——剑滑出屏外、枪 `position.y` 回升复位。过渡期间 `_melee_active=true`，`_process` 中跳过 container lerp 让 Tween 完全控制。剑初始变换在 `_ready()` 缓存为 `_melee_sword_init_pos` / `_melee_sword_init_rot`，`action_melee()` 入口强制重置到该基准防连续挥砍残留与漂移。 |
+| **Swing Animation Style（挥砍动画样式）** | 采用**下劈（Downward Slash）**：剑从右上向左下划过屏幕。前摇 0.2s 把剑举到右上（同时从屏外滑入）→ 活跃帧 0.2s 划到左下 → 后摇 0.2s 收回隐藏（同时滑出屏外）。用单个 Tween 同时 tween `rotation_degrees` 和 `position` 实现，无 AnimationPlayer 依赖。**选此方案的理由：** 第一人称视角下下劈视觉冲击最强（剑尖从视野上方划到下方）；与"挥砍"语义最贴合（横扫视觉弱、突刺像长矛）；与 Q1 时间窗天然契合。被否决的替代：横扫（FP 下视觉弱）、突刺（不像剑）、左右交替变体（v1 不必要）。过渡动画时序详见 ADR 019。 |
 | **Melee-Reload Independence（近战换弹并发）** | 近战挥砍与换弹**互不阻塞**：换弹中按 V 可触发挥砍，挥砍中按 R 可触发换弹。理由：ADR 006 的核心就是近战与 `Weapon`/弹药体系解耦——若近战被换弹阻塞就破坏解耦语义。换弹是枪的事，近战是手的事，两套独立状态机并行运行。冷却（`melee_cooldown`）只约束近战自身，不查 `is_reloading`；换弹逻辑（`action_reload`/`_step_reload`）不查近战状态。 |
 | **Melee Hitbox Wall Piercing（近战命中区穿墙语义）** | v1 命中结算用 `has_method("damage")` 过滤重叠物体——`get_overlapping_bodies()` 返回的 StaticBody3D（墙体、平台）因无 `damage()` 方法自然被跳过，无需 layer/mask 配置。**已知边缘情况**：薄墙后的敌人可能被穿墙砍中（盒子几何上重叠但视线被挡）。v1 不加 RayCast 视线检查（过度工程），记录为未来增强。墙体不会被错误伤害，但也不会阻挡对墙后敌人的伤害。 |
 | **Melee Viewmodel Lifecycle（近战视图模型生命周期）** | Melee Viewmodel 在玩家 `_ready()` 中**实例化一次**，作为 `CameraItem` 的子节点（与 `Container` 平级，不在 Container 内——否则会被 `change_weapon()` 的 `remove_child()` 清掉）。初始 `visible = false`，每次挥砍复用同一实例：show → Tween 挥砍 → hide。**不**每次挥砍重新 instantiate。所有 `MeshInstance3D` 的 `layers = 2`（仅武器相机渲染），与 `change_weapon()` 中枪械模型设置方式一致。 |
@@ -146,7 +147,9 @@
 |------|------|
 | **Arena Run（竞技场一局）** | 玩家在单个固定竞技场中的一次完整游戏会话。以玩家死亡（或主动退出）结束；结束后重置全部本局状态（金币、经验、护盾、弹药等）。一局内怪物按波次刷出。 |
 | **Wave（波次）** | 成组刷出的怪物批次。玩家**清空（全灭）**该批后该波结束、进入间歇。波次编号递增，整体难度随编号上升（Escalation）。 |
-| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**数量**第 N 波 = `4 + 2×(N-1)` 只；**类型分阶段解锁**——1–3 波纯 `monster_melee`，第 4 波起混 `monster_ranged`，第 7 波起混 `enemy`（飞行）。见本会话 Q8。 |
+| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**分数预算**第 N 波 = `30 × 1.5^(N-1)`（前波 1.5 倍）；**类型分阶段解锁**——1–3 波纯 `monster_melee`，第 4 波起混 `monster_ranged`，第 7 波起混 `enemy`（飞行）。参见 [ADR 018](file:///g:/work/Starter-Kit-FPS/docs/adr/018-score-based-wave-composition.md)。 |
+| **Monster Cost（怪物分数/成本）** | 每种怪物类型的刷出代价，决定在波次预算中占多少配额。与击杀奖励值一致：`monster_melee`=5、`monster_ranged`=8、`enemy`=10。越强 = 越贵 = 杀它掉越多。 |
+| **Wave Budget（波次预算）** | 每波可用的总分数，RunDirector 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。初值 30，每波 ×1.5。纯函数 `wave_budget(wave_number)` 计算。 |
 | **Wave Spawn（波次刷怪）** | 每波怪物在**波开始时一次性全刷**入竞技场；玩家**全灭**该批即视为该波清空、进入 Intermission。无 trickle / 分批刷怪。 |
 | **Intermission（波次间歇）** | 两波之间的短暂停顿状态：**停止刷怪**，下一波由**玩家手动确认**开始（本会话 Q6 定为手动确认）。它本身**不是**消费窗口——金币消费走物理商店摊位（Shop，随时 walk-in），升级卡走 XP 即时暂停；间歇只负责"清场→下一波"的节奏断点。 |
 | **Kill Reward（击杀奖励）** | 怪物死亡时结算的奖励，包含金币（Gold）与经验（XP），并小概率额外掉落血包（Health Pack）。三类资源（金币 / 经验 / 血包）的唯一来源（除每局初始值外）。**分档按怪类型**（初值，可调）：`monster_melee` = 5 金 / 5 XP、`monster_ranged` = 8 金 / 8 XP、`enemy`（飞行）= 10 金 / 10 XP。**血包掉率初值 10%**（可调）。**不随波次缩放**——收益靠每波怪物数量 / 种类递增自然增长，避免通胀。见本会话 Q7。 |
@@ -208,6 +211,7 @@
 | **Flying Enemy AI（飞行敌人 AI）** | `enemy.gd` 重写为追踪型：保持悬停高度（`hover_height = 4.0m`，相对地面），水平方向追踪玩家（速度 `fly_speed = 4.0`），保持 `preferred_distance = 8.0m` 距离环绕 strafing。使用 `lerp` 平滑移动而非瞬移。不再使用 NavMesh（飞行无视地形），纯向量计算。被墙挡时（RayCast 检测）升高越过或绕行。 |
 | **NavMesh Tuning（导航网格调参）** | `nav_region.gd` 烘焙参数优化：`agent_radius = 0.5`（与碰撞体匹配）、`agent_height = 1.5`（怪物模型高度）、`cell_size = 0.25`（精度提升，默认 0.3 太粗）、`agent_max_climb = StepConstants.STEP_HEIGHT`（不变）、`agent_max_slope = 45.0`（默认）。更小的 cell_size 使路径更贴合墙壁，减少"穿墙感"。 |
 | **Staggered Updates（错帧更新）** | 性能优化：多只怪物的路径计算分散到不同物理帧。每只怪在 `_ready()` 中按序号计算 `_update_delay = (index % 6) * 0.05`，路径计时器初始值偏移该量。16 只怪时分 6 帧处理，每帧最多 3 只怪请求路径。 |
+| **Chain Aggro（连锁警觉）** | 两级感知模型：**被动感知**（`awareness_range`，默认 8m；近战 8m、远程 12m）+ **警觉传播**（alert 事件驱动，范围 `chase_range`）。alert 由玩家开枪（30m）、怪物开枪（25m）、怪物死亡（20m）触发，穿墙传播。IDLE 怪物被 alert 惊动后转 CHASE；进入 CHASE 后不因安静退回 IDLE（只走 LOST 路线）。实现见 `AlertSystem` autoload（`emit_alert` / `has_alert_nearby`），alert 缓存存活 0.5s。 |
 
 ## 场景文件约定（Scene File Conventions）
 

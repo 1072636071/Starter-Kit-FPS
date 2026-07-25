@@ -36,9 +36,9 @@
 
 | 子决策 | 选定方案 | 关键理由 |
 |--------|----------|----------|
-| **挥砍时序** | `swing_duration = 0.4s`，Active Frames `0.1s–0.3s`（伤害窗口 0.2s，前摇/后摇各 0.1s） | 留 0.1s 缓冲到 `melee_cooldown`（0.5s）结束；前摇给"举剑"动画时间，后摇给"收剑"动画时间 |
+| **挥砍时序** | `swing_duration = 0.4s`，Active Frames `0.1s–0.3s`（伤害窗口 0.2s，前摇/后摇各 0.1s） | 留 0.1s 缓冲到 `melee_cooldown`（0.5s）结束；前摇给"举剑"动画时间，后摇给"收剑"动画时间。**[已被 [ADR 019](file:///g:/work/Starter-Kit-FPS/docs/adr/019-melee-swing-transitions.md) 取代：时序拉长到 0.6s，前摇/后摇各 0.2s]** |
 | **Melee Hitbox 朝向** | 挂 Player 根节点，**只跟随 yaw，不跟随 pitch**；中心 `Vector3(0, 0.5, -1.0)`，`BoxShape3D(1.5, 1.5, 2.0)` | 近战短射程+0.5s 冷却下可预测性 > 技巧表达；与射击系统（用相机方向+散布做瞄准）差异化才有辨识度；pitch 跟踪会让盒子穿地板/天花板 |
-| **挥砍动画样式** | 下劈（Downward Slash），剑从右上→左下 | FP 视觉冲击最强；"挥砍"语义最贴合；与挥砍时序天然契合 |
+| **挥砍动画样式** | 下劈（Downward Slash），剑从右上→左下 | FP 视觉冲击最强；"挥砍"语义最贴合；与挥砍时序天然契合。**[ADR 019 在此基础上增加枪剑过渡动画：剑从屏外滑入/滑出，枪 Container 下沉/回升]** |
 | **近战-换弹并发** | 互不阻塞：换弹中可挥砍，挥砍中可换弹 | ADR 006 核心是解耦——若近战被换弹阻塞就破坏解耦语义 |
 | **穿墙语义** | v1 用 `has_method("damage")` 过滤重叠体；接受薄墙穿墙边缘情况 | 墙体 StaticBody3D 无 `damage()` 自然被过滤；RayCast 视线检查对 v1 是过度工程 |
 | **Viewmodel 生命周期** | `_ready()` 中实例化一次、挂 `CameraItem` 下（与 `Container` 平级）；每次挥砍复用同一实例 | 不在 `Container` 内否则被 `change_weapon()` 清掉；不每次挥砍重新 instantiate（最简最稳） |
