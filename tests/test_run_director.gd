@@ -18,6 +18,18 @@ func _check(condition: bool, msg: String) -> void:
 		print("[TEST] FAIL: ", msg)
 		failures += 1
 
+## 计算一组怪物类型的总成本（用于分数制波次测试）
+func _total_cost(types: Array) -> int:
+	const COST := {
+		&"monster_melee": 5,
+		&"monster_ranged": 8,
+		&"enemy": 10,
+	}
+	var total := 0
+	for t in types:
+		total += COST.get(t, 0)
+	return total
+
 func _make_rd() -> Node:
 	var rd := preload("res://scripts/run_director.gd").new()
 	# 注入可控 rng_seed + 怪物父节点
@@ -58,19 +70,24 @@ func _run_tests() -> void:
 	rd.apply_upgrade(&"damage")
 	_check(get_tree().paused == false, "game unpaused after apply_upgrade (issue 05 integration)")
 
-	# === 3. 波次组成（纯函数）===
+	# === 3. 波次组成（分数制）===
+	# 波 1：预算 30，仅 melee（cost=5）→ 恰好 6 只
 	var w1 := rd.compute_wave_composition(1)
-	_check(w1.size() == 4, "wave 1 count = 4 (got %d)" % w1.size())
-	_check(w1.count(&"monster_melee") == 4 and w1.count(&"monster_ranged") == 0 and w1.count(&"enemy") == 0,
+	_check(w1.size() == 6, "wave 1 count = 6 (got %d)" % w1.size())
+	_check(w1.count(&"monster_melee") == 6 and w1.count(&"monster_ranged") == 0 and w1.count(&"enemy") == 0,
 		"wave 1 all melee")
+	# 波 4：预算 101，可用 melee + ranged；总成本 ≥ 预算，类型仅 melee/ranged
 	var w4 := rd.compute_wave_composition(4)
-	_check(w4.size() == 10, "wave 4 count = 10 (got %d)" % w4.size())
-	_check(w4.count(&"monster_melee") == 6 and w4.count(&"monster_ranged") == 4,
-		"wave 4 60%% melee / 40%% ranged (got %d/%d)" % [w4.count(&"monster_melee"), w4.count(&"monster_ranged")])
+	var w4_cost := _total_cost(w4)
+	_check(w4_cost >= rd.wave_budget(4), "wave 4 cost %d >= budget %d" % [w4_cost, rd.wave_budget(4)])
+	_check(w4.count(&"monster_melee") > 0 and w4.count(&"monster_ranged") > 0 and w4.count(&"enemy") == 0,
+		"wave 4 melee+ranged only, no enemy (got melee=%d ranged=%d enemy=%d)" % [w4.count(&"monster_melee"), w4.count(&"monster_ranged"), w4.count(&"enemy")])
+	# 波 7：预算 340，可用全部三种类型；总成本 ≥ 预算
 	var w7 := rd.compute_wave_composition(7)
-	_check(w7.size() == 16, "wave 7 count = 16 (got %d)" % w7.size())
-	_check(w7.count(&"monster_melee") == 8 and w7.count(&"monster_ranged") == 5 and w7.count(&"enemy") == 3,
-		"wave 7 50/30/20 (got %d/%d/%d)" % [w7.count(&"monster_melee"), w7.count(&"monster_ranged"), w7.count(&"enemy")])
+	var w7_cost := _total_cost(w7)
+	_check(w7_cost >= rd.wave_budget(7), "wave 7 cost %d >= budget %d" % [w7_cost, rd.wave_budget(7)])
+	_check(w7.count(&"monster_melee") > 0 and w7.count(&"monster_ranged") > 0 and w7.count(&"enemy") > 0,
+		"wave 7 all three types present (got %d/%d/%d)" % [w7.count(&"monster_melee"), w7.count(&"monster_ranged"), w7.count(&"enemy")])
 
 	# === 4. 奖励结算 + 血包掉落（用假怪物直接驱动 _on_monster_died）===
 	rd.set("_wave_active", false)  # 不触发 wave_cleared
@@ -147,8 +164,8 @@ func _run_tests() -> void:
 	rd2.start_next_wave()
 	_check(_wave_started == 1, "wave_started emitted (got %d)" % _wave_started)
 	_check(rd2.wave == 1, "wave == 1 (got %d)" % rd2.wave)
-	_check(rd2.alive_count == 4, "alive_count == 4 after wave 1 start (got %d)" % rd2.alive_count)
-	_check(monsters_parent.get_child_count() == 4, "4 monsters spawned (got %d)" % monsters_parent.get_child_count())
+	_check(rd2.alive_count == 6, "alive_count == 6 after wave 1 start (got %d)" % rd2.alive_count)
+	_check(monsters_parent.get_child_count() == 6, "6 monsters spawned (got %d)" % monsters_parent.get_child_count())
 	# 杀光所有怪物
 	var gold_pre := rd2.gold
 	for m in monsters_parent.get_children():
@@ -157,9 +174,9 @@ func _run_tests() -> void:
 	# 等一帧让 die 动画/延迟 queue_free 不影响断言（died 已同步发射）
 	await get_tree().physics_frame
 	_check(_wave_cleared == 1, "wave_cleared after killing all (got %d)" % _wave_cleared)
-	_check(rd2.gold == gold_pre + 4 * 5, "gold +20 from 4 melee kills (got %d)" % (rd2.gold - gold_pre))
-	_check(rd2.kills == 4, "kills == 4 (got %d)" % rd2.kills)
-	# issue 05 集成：4×5=20 XP 跨阈值触发升级暂停，需 apply 恢复
+	_check(rd2.gold == gold_pre + 6 * 5, "gold +30 from 6 melee kills (got %d)" % (rd2.gold - gold_pre))
+	_check(rd2.kills == 6, "kills == 6 (got %d)" % rd2.kills)
+	# issue 05 集成：6×5=30 XP 跨阈值触发升级暂停，需 apply 恢复
 	if bool(rd2.get("_level_up_pending")):
 		rd2.apply_upgrade(&"damage")
 	_check(get_tree().paused == false, "game unpaused before test 7 (issue 05 cleanup)")
@@ -186,7 +203,7 @@ func _run_tests() -> void:
 		_counters["timeout_cleared"] = int(_counters["timeout_cleared"]) + 1
 		_counters["by_timeout"] = t)
 	rd3.start_next_wave()
-	_check(rd3.alive_count == 4, "rd3 wave1 alive=4 (got %d)" % rd3.alive_count)
+	_check(rd3.alive_count == 6, "rd3 wave1 alive=6 (got %d)" % rd3.alive_count)
 	# 等超过 wave_timeout（0.2s）→ 强制清场
 	await get_tree().create_timer(0.6).timeout
 	_check(int(_counters["timeout_cleared"]) == 1, "wave_cleared on timeout (got %d)" % int(_counters["timeout_cleared"]))

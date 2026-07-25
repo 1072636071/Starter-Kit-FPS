@@ -247,32 +247,38 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("start_wave"):
 		start_next_wave()
 
-## 第 N 波的怪物类型组成（数量 = 4 + 2×(N-1)，类型按波分阶段解锁）
-## 纯函数，便于测试
-func compute_wave_composition(wave_number: int) -> Array[StringName]:
-	var count := 4 + 2 * (wave_number - 1)
-	var melee_count: int
-	var ranged_count: int
-	var enemy_count: int
+## 怪物刷出成本（分数），与奖励值一致：越强 = 越贵 = 杀它掉越多
+const MONSTER_COST := {
+	&"monster_melee": 5,
+	&"monster_ranged": 8,
+	&"enemy": 10,
+}
+
+## 第 N 波的分数预算：30 × 1.5^(N-1)，即每波预算为上一波的 1.5 倍
+func wave_budget(wave_number: int) -> int:
+	return int(round(30.0 * pow(1.5, wave_number - 1)))
+
+## 当前波次可用的怪物类型（按波分阶段解锁，与旧规则一致）
+func _available_types(wave_number: int) -> Array[StringName]:
 	if wave_number <= 3:
-		melee_count = count
-		ranged_count = 0
-		enemy_count = 0
+		return [&"monster_melee"]
 	elif wave_number <= 6:
-		melee_count = int(round(count * 0.6))
-		ranged_count = count - melee_count
-		enemy_count = 0
+		return [&"monster_melee", &"monster_ranged"]
 	else:
-		melee_count = int(round(count * 0.5))
-		ranged_count = int(round(count * 0.3))
-		enemy_count = count - melee_count - ranged_count
+		return [&"monster_melee", &"monster_ranged", &"enemy"]
+
+## 分数制波次组成：从可用类型中随机选取怪物，直到总成本 >= 波次预算
+## 使用本局 rng 保证测试可复现（固定 rng_seed）
+func compute_wave_composition(wave_number: int) -> Array[StringName]:
+	var budget := wave_budget(wave_number)
+	var available := _available_types(wave_number)
 	var types: Array[StringName] = []
-	for i in melee_count:
-		types.append(&"monster_melee")
-	for i in ranged_count:
-		types.append(&"monster_ranged")
-	for i in enemy_count:
-		types.append(&"enemy")
+	var total_cost := 0
+	while total_cost < budget:
+		var idx := rng.randi_range(0, available.size() - 1)
+		var monster_type: StringName = available[idx]
+		types.append(monster_type)
+		total_cost += MONSTER_COST[monster_type]
 	return types
 
 func _spawn_all(types: Array[StringName]) -> void:

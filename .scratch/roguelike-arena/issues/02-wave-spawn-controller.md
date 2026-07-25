@@ -10,12 +10,14 @@ Refs: PRD.md, ADR 009, ADR 015, CONTEXT.md「Wave / Escalation / Wave Spawn / In
 
 ## 验收标准
 
-### 波次数量与类型
-- 第 N 波怪物数量 = `4 + 2×(N-1)`。
-- 怪物类型分阶段解锁，**解锁后的类型比例**（按数量取整，余数补到已解锁的最弱类型）：
-  - 1–3 波：100% `monster_melee`。
-  - 4–6 波：60% `monster_melee` / 40% `monster_ranged`。
-  - 7+ 波：50% `monster_melee` / 30% `monster_ranged` / 20% `enemy`（飞行）。
+### 波次数量与类型（已由 ADR 018 改为分数预算制）
+- 第 N 波怪物由**分数预算**决定：`wave_budget(N) = 30 × 1.5^(N-1)`。
+- 每种怪物有刷出成本：`monster_melee`=5, `monster_ranged`=8, `enemy`=10。
+- 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。
+- 怪物类型分阶段解锁（保留）：
+  - 1–3 波：仅 `monster_melee`。
+  - 4–6 波：`monster_melee` + `monster_ranged`。
+  - 7+ 波：全部三种类型。
 - 每波怪物在波开始时**一次性全刷**入竞技场。
 
 ### 出生点策略（新增）
@@ -78,7 +80,7 @@ Refs: PRD.md, ADR 009, ADR 015, CONTEXT.md「Wave / Escalation / Wave Spawn / In
 
 实现要点：
 - **RunDirector**（[run_director.gd](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd)）挂在 `Main` 下，`_ready()` 自动收集 `SpawnPoints` / `Monsters`，监听 `player.died` → `game_over`。
-- **波次组成**（[run_director.gd:153-177](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd#L153-L177)）：纯函数 `compute_wave_composition(wave_number)`，数量 `4 + 2×(N-1)`，1-3 波纯 melee、4-6 波 60/40 melee/ranged、7+ 波 50/30/20 melee/ranged/enemy。
+- **波次组成**（[run_director.gd:250-282](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd#L250-L282)）：分数预算制——`MONSTER_COST` 常量（melee=5/ranged=8/enemy=10）、`wave_budget(N) = 30 × 1.5^(N-1)`、`compute_wave_composition` 随机选取至总成本 ≥ 预算。类型分阶段解锁（1-3 melee only、4-6 +ranged、7+ +enemy）。参见 [ADR 018](file:///g:/work/Starter-Kit-FPS/docs/adr/018-score-based-wave-composition.md)。
 - **出生点**（[main.tscn:192-216](file:///g:/work/Starter-Kit-FPS/scenes/main.tscn#L192-L216)）：`SpawnPoints` 节点下 8 个 `Marker3D` 沿竞技场四周布置；刷怪时用本局 rng 打乱出生点顺序，需求 > 出生点数时循环取点并叠加 ±2m 抖动。
 - **清场检测**（[run_director.gd:218-227](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd#L218-L227)）：维护 `alive_count`，监听每只怪物 `died` 信号减 1，归零 → `wave_cleared(wave, cleared_by_timeout)`。不依赖 `get_child_count()`（避免 die 动画延迟 queue_free 误判）。
 - **卡怪兜底**（[run_director.gd:250-274](file:///g:/work/Starter-Kit-FPS/scripts/run_director.gd#L250-L274)）：`wave_timeout = 120s`（@export），到点 `_force_clear_wave()` 强制 `destroy()` 剩余怪物（触发 died → 正常结算）；防御性兜底——若 destroy 后 alive_count 仍 > 0 则直接 `_end_wave`。`_cleared_by_timeout` 标志通过信号参数传出。
