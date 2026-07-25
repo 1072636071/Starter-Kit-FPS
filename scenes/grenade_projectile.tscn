@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/grenade_projectile.gd" id="1_grenade"]
+
+[node name="GrenadeProjectile" type="RigidBody3D"]
+mass = 1.0
+gravity_scale = 1.5
+script = ExtResource("1_grenade")

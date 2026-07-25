@@ -1,6 +1,6 @@
 # 22 — 商店 UI 三区重构（武器 / 弹药 / 手雷）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 04/09/19
 

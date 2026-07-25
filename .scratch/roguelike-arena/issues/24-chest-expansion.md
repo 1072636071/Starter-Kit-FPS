@@ -1,6 +1,6 @@
 # 24 — 宝箱奖励池扩展（随机武器 + 手雷补给）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 08/19/21/23
 

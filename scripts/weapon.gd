@@ -46,3 +46,19 @@ class_name Weapon
 @export var role_title: String = ""                      # 角色定位，如 "入门可靠型"
 @export var role_features: String = ""                   # 核心特征描述
 @export var reliability_stars: int = 2                   # 可靠性 ★ 1-3
+
+## Beam 武器模式（issue 15）："" = 常规弹体，"beam" = 持续射线
+@export_subgroup("Beam")
+@export var weapon_mode: String = ""
+## beam 模式每 tick 间隔（秒），每 tick 扣 1 弹药 + 1 耐久 + 结算一次伤害
+@export var tick_interval: float = 0.1
+
+
+## 根据耐久比例返回对应颜色：>0.6 绿 / >0.2 黄 / ≤0.2 红
+static func durability_color(ratio: float) -> Color:
+	if ratio > 0.6:
+		return Color(0.2, 0.9, 0.2, 0.85)
+	elif ratio > 0.2:
+		return Color(0.9, 0.8, 0.1, 0.85)
+	else:
+		return Color(0.95, 0.15, 0.15, 0.85)

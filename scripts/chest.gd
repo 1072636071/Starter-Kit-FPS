@@ -78,7 +78,16 @@ func _open_chest() -> void:
 		get_tree().paused = false
 
 ## 由 ChestUI 调用：玩家选择奖励后回调
-## 发 chest_reward_selected 信号（RunDirector 监听 apply）→ queue_free
+## 发 chest_reward_selected 信号（RunDirector 监听 apply）
+## 非随机武器奖励：立即 queue_free
+## 随机武器奖励：延迟销毁，由 chest_ui 在替换流程结束后调用 finish_reward()
 func apply_reward_selected(reward_id: StringName) -> void:
 	chest_reward_selected.emit(reward_id)
-	queue_free()
+	if reward_id != &"random_weapon":
+		queue_free()
+	# random_weapon: chest_ui 处理替换对话框后调用 finish_reward()
+
+## 由 chest_ui 在替换对话框关闭后调用，确认宝箱可安全销毁
+func finish_reward() -> void:
+	if is_instance_valid(self) and is_inside_tree():
+		queue_free()

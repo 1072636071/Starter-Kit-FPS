@@ -1,6 +1,6 @@
 # 25 — 武器检视 UI 验证
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 19/20/21
 

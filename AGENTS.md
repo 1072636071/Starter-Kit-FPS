@@ -1,3 +1,5 @@
+gear-godot-mcp 可以提供 godot能力。
+
 # AGENTS.md
 
 工程技能（Matt Pocock 风格）的配置与约定。
@@ -6,7 +8,7 @@
 
 ### Issue tracker
 
-Issue 以 markdown 文件存放在仓库的 `.scratch/<feature>/` 下；不使用任何外部 PR 作为 triage 渠道。跨功能索引在 `.scratch/tickets.md`。**不要在仓库根目录创建/保留 `tickets.md`** —— 那是 `jxx-to-tickets` 技能的默认落点，并非本仓库约定。详见 `docs/agents/issue-tracker.md`「写作目录」一节。
+Issue 以 markdown 文件存放在仓库的 `.scratch/<feature>/` 下；不使用任何外部 PR 作为 triage 渠道。参见 `docs/agents/issue-tracker.md`。
 
 ### triage 标签
 

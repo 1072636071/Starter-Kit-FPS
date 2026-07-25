@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://btestbalance27econ"]
+
+[node name="TestBalanceAmmoEconomy" type="Node"]
+script = ExtResource("1_test_script")
+
+[ext_resource type="Script" path="res://tests/test_balance_ammo_economy.gd" id="1_test_script"]

@@ -1,6 +1,6 @@
 # 26 — 集成烟雾测试（全敌人 + 全武器）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 10–25
 

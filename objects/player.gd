@@ -153,6 +153,27 @@ var tween: Tween
 # 近战命中震屏衰减值（每帧 lerp 到 0，命中时置为峰值）
 var _melee_hit_shake := 0.0
 
+# issue 15：beam 武器持续射击状态
+var _beam_active := false              # 是否正在持续发射 beam
+var _beam_tick_accumulator := 0.0      # beam tick 累加器（秒）
+var _beam_current_index := -1          # 当前 beam 对应的武器索引（防并发切枪）
+
+# issue 23：手雷系统
+var grenades: Dictionary = {&"emp": 0, &"frag": 0}
+var max_grenades: int = 5
+var selected_grenade_type: StringName = &"emp"
+var is_charging_grenade: bool = false
+var grenade_charge_time: float = 0.0
+@export var grenade_min_speed := 8.0
+@export var grenade_max_speed := 18.0
+@export var grenade_charge_max := 1.5 # 最大蓄力时间（秒）
+
+# issue 03：手雷抛物线预览
+var _arc_preview_mesh: MeshInstance3D
+var _arc_preview_material: StandardMaterial3D
+@export var arc_preview_steps := 20
+@export var arc_preview_dt := 0.05
+
 signal health_updated
 # 护盾变化信号（参数：当前 shield / shield_max），供 HUD 绘制护盾条（issue 07）
 signal shield_updated(shield: float, shield_max: float)
@@ -167,6 +188,8 @@ signal stuck_state_changed(new_state: StuckState)
 signal ammo_updated(weapon_index: int, magazines: Array, reserves: Array)
 signal reload_started(weapon_index: int, reload_time: float)
 signal reload_ended(weapon_index: int, cancelled: bool)
+# issue 23：手雷数量变化信号，HUD 信号驱动而非每帧轮询
+signal grenades_changed(grenades: Dictionary, selected_type: StringName)
 
 @onready var camera = $Head/Camera
 @onready var muzzle = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Muzzle
@@ -243,6 +266,17 @@ func _ready():
 		var box := (hit_shape.shape as BoxShape3D).duplicate()
 		box.size.z = melee_reach
 		hit_shape.shape = box
+
+	# issue 03：手雷抛物线预览 Mesh —— 挂在 CameraItem 下，仅武器相机可见（layer 2）
+	_arc_preview_mesh = MeshInstance3D.new()
+	_arc_preview_mesh.name = "ArcPreview"
+	_arc_preview_mesh.layers = 2
+	camera_item.add_child(_arc_preview_mesh)
+	_arc_preview_material = StandardMaterial3D.new()
+	_arc_preview_material.albedo_color = Color.WHITE
+	_arc_preview_material.flags_unshaded = true
+	_arc_preview_material.flags_no_depth_test = true
+	_arc_preview_mesh.visible = false
 
 # 物理处理：移动、重力、碰撞 —— 必须在固定物理 tick 中运行
 func _physics_process(delta):
@@ -337,6 +371,9 @@ func _process(delta):
 	# 换弹计时
 	_step_reload(delta)
 
+	# beam 持续射击 tick（issue 15）：每 tick_interval 扣弹药 + 耐久 + 射线伤害
+	_step_beam(delta)
+
 	# 护盾延时恢复（issue 01，ADR 010）
 	# Player 为 PROCESS_MODE_PAUSABLE，暂停期间本函数不被调用，regen 自然冻结
 	_step_shield_regen(delta)
@@ -347,6 +384,9 @@ func _process(delta):
 
 	# 近战命中结算
 	_melee_process_hits()
+
+	# issue 03：手雷抛物线预览 —— 蓄力期间每帧更新
+	_update_arc_preview()
 
 	# 坠落检测
 	if position.y < -10:
@@ -504,6 +544,26 @@ func handle_controls(delta):
 
 	action_weapon_toggle()
 
+	# issue 21：丢弃武器（X 键）
+	if Input.is_action_just_pressed("drop_weapon"):
+		action_drop_weapon()
+
+	# issue 23：手雷投掷（G 键蓄力）
+	if Input.is_action_just_pressed("throw_grenade"):
+		if grenades.get(selected_grenade_type, 0) > 0:
+			is_charging_grenade = true
+			grenade_charge_time = 0.0
+
+	if Input.is_action_just_released("throw_grenade") and is_charging_grenade:
+		_throw_grenade()
+		is_charging_grenade = false
+
+	# 蓄力期间：累计时间 + 切换手雷类型
+	if is_charging_grenade:
+		grenade_charge_time = minf(grenade_charge_time + delta, grenade_charge_max)
+		if Input.is_action_just_pressed("grenade_switch"):
+			selected_grenade_type = &"frag" if selected_grenade_type == &"emp" else &"emp"
+
 # Camera rotation
 
 func handle_rotation(xRot: float, yRot: float, isController: bool, delta: float = 0.0):
@@ -550,12 +610,34 @@ func action_jump():
 
 func action_shoot():
 	if Input.is_action_pressed("shoot"):
-		if !blaster_cooldown.is_stopped(): return # Cooldown for shooting
 		if not camera.is_inside_tree(): return # camera 在 SubViewport 中初始化或场景切换时可能离树
 		if weapon == null: return # 空手（武器全部损毁）不可射击（issue 09）
 
 		# 换弹中禁射
 		if is_reloading: return
+
+		# === beam 模式（issue 15）：持续射线，不依赖 cooldown/弹体 ===
+		if weapon.weapon_mode == "beam":
+			# 守卫：weapon 必须仍在 weapons 数组中（爆枪后 weapon 引用可能已过时）
+			if weapon_index < 0 or weapon_index >= weapons.size() or weapons[weapon_index] != weapon:
+				return
+			# 弹匣空：不发射，自动换弹
+			if magazine[weapon_index] <= 0:
+				_stop_beam_active()
+				action_reload(weapon_index)
+				return
+			# 开始/继续 beam；beam tick 在 _process 中处理
+			if not _beam_active:
+				_beam_active = true
+				_beam_tick_accumulator = 0.0
+				_beam_current_index = weapon_index
+				Audio.play(weapon.sound_shoot)
+				AlertSystem.emit_alert(global_position, SHOOT_ALERT_RADIUS)
+				muzzle.play("default")
+			return
+
+		# === 常规弹体模式 ===
+		if !blaster_cooldown.is_stopped(): return # Cooldown for shooting
 
 		# 弹匣空：扣扳机无效（不发射、不进冷却），并自动触发换弹
 		if magazine[weapon_index] <= 0:
@@ -626,13 +708,101 @@ func action_shoot():
 		# 耐久归零：武器损毁——碎裂粒子 + 移除 + 自动切换/空手（issue 09）
 		if weapon_broke:
 			_on_weapon_broken(shot_weapon_index)
+	else:
+		# 松开扳机：beam 模式停止持续射击
+		if _beam_active:
+			_stop_beam_active()
 
-# 武器耐久归零处理（issue 09）：
+# === beam 持续射击系统（issue 15）===
+
+## 停止 beam 持续射击，重置状态
+func _stop_beam_active() -> void:
+	_beam_active = false
+	_beam_tick_accumulator = 0.0
+	_beam_current_index = -1
+
+## 每帧推进 beam tick：按 tick_interval 间隔扣弹药 + 耐久 + 射线伤害
+func _step_beam(delta: float) -> void:
+	if not _beam_active:
+		return
+	if weapon == null or weapon.weapon_mode != "beam":
+		_stop_beam_active()
+		return
+	# 守卫：weapon 必须仍在 weapons 数组中（爆枪后引用已过时）
+	if weapon_index < 0 or weapon_index >= weapons.size() or weapons[weapon_index] != weapon:
+		_stop_beam_active()
+		return
+	# 切枪/换弹/弹匣空 → 停止 beam
+	if weapon_index != _beam_current_index or is_reloading:
+		_stop_beam_active()
+		return
+	if magazine[weapon_index] <= 0:
+		_stop_beam_active()
+		action_reload(weapon_index)
+		return
+
+	_beam_tick_accumulator += delta
+	var interval := weapon.tick_interval
+	if interval <= 0.0:
+		interval = 0.1 # 保底默认 0.1s
+
+	while _beam_tick_accumulator >= interval:
+		_beam_tick_accumulator -= interval
+
+		# 再次检查弹药（可能在上一 tick 耗尽）
+		if magazine[weapon_index] <= 0:
+			_stop_beam_active()
+			action_reload(weapon_index)
+			return
+
+		# 扣弹药
+		magazine[weapon_index] -= 1
+		_emit_ammo_updated()
+
+		# 扣耐久（issue 01：beam 武器耐久按 tick 递减）
+		var beam_index := weapon_index
+		var weapon_broke := false
+		if weapon.durability_max > 0:
+			weapon_durability[beam_index] = maxi(0, weapon_durability[beam_index] - 1)
+			weapon_broke = weapon_durability[beam_index] <= 0
+
+		# 射线伤害：从相机向前做 raycast，命中 enemy 则结算
+		_beam_deal_damage()
+
+		# 耐久归零 → 爆枪（与普通武器相同流程）
+		if weapon_broke:
+			_stop_beam_active()
+			_on_weapon_broken(beam_index)
+			return
+
+## beam 单 tick 射线伤害：从相机沿视线方向 raycast，命中带 damage() 方法的对象则结算
+func _beam_deal_damage() -> void:
+	if weapon == null or not is_inside_tree():
+		return
+	var space_state := get_world_3d().direct_space_state
+	if space_state == null:
+		return
+	var origin := camera.global_position
+	var direction := -camera.global_transform.basis.z.normalized()
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * weapon.max_distance)
+	query.collision_mask = 1  # 默认碰撞层
+	query.exclude = [self]
+	var result := space_state.intersect_ray(query)
+	if result.is_empty():
+		return
+	var collider := result.get("collider")
+	if collider == null or not is_instance_valid(collider):
+		return
+	if collider.has_method("damage"):
+		collider.damage(weapon.damage * damage_multiplier)
+
+# === 武器耐久归零处理 ===
 # 播放 0.3s 碎裂粒子 → 从 weapons/magazine/weapon_durability 移除 →
 # 自动切到下一把武器；无武器则进入空手状态（weapon=null, weapon_index=-1）
 func _on_weapon_broken(index: int) -> void:
 	if index < 0 or index >= weapons.size():
 		return
+	_stop_beam_active()
 	_cancel_reload()
 	_spawn_weapon_break_vfx()
 	Audio.play("sounds/weapon_change.ogg")
@@ -682,10 +852,85 @@ func action_weapon_toggle():
 		if weapons.is_empty(): return # 空手无可切（issue 09）
 		# 切枪取消换弹（不在切换动画末尾才取消，避免新武器继承旧换弹状态）
 		_cancel_reload()
+		_stop_beam_active()
 		weapon_index = wrap(weapon_index + 1, 0, weapons.size())
 		initiate_change_weapon(weapon_index)
 
 		Audio.play("sounds/weapon_change.ogg")
+
+# issue 21：丢弃当前武器（X 键）
+# 在玩家位置生成 weapon_pickup，从武器数组中移除，自动切换或空手
+func action_drop_weapon() -> void:
+	if weapons.is_empty():
+		return
+	if weapon_index < 0 or weapon_index >= weapons.size():
+		return
+
+	_stop_beam_active()
+	var idx := weapon_index
+	var dropped_weapon: Weapon = weapons[idx]
+	var dropped_durability := weapon_durability[idx] if idx < weapon_durability.size() else 0
+
+	# 生成拾取物
+	var pickup_scene: PackedScene = load("res://scenes/weapon_pickup.tscn")
+	if pickup_scene == null:
+		return
+	var pickup: Node3D = pickup_scene.instantiate()
+	pickup.global_position = global_position + Vector3(0, 0.3, 0)
+	pickup.weapon_resource = dropped_weapon
+	pickup.durability_current = dropped_durability
+	get_parent().add_child(pickup)
+
+	# 从数组中移除
+	weapons.remove_at(idx)
+	weapon_durability.remove_at(idx)
+	magazine.remove_at(idx)
+
+	# 取消换弹
+	_cancel_reload()
+
+	# 自动切换或空手
+	if weapons.is_empty():
+		weapon = null
+		weapon_index = -1
+		for n in container.get_children():
+			container.remove_child(n)
+		if crosshair:
+			crosshair.texture = null
+	else:
+		initiate_change_weapon(mini(idx, weapons.size() - 1))
+
+	_emit_ammo_updated()
+
+# issue 23：投掷手雷
+func _throw_grenade() -> void:
+	if grenades.get(selected_grenade_type, 0) <= 0:
+		return
+
+	# 扣减手雷数量
+	grenades[selected_grenade_type] -= 1
+
+	# 计算投掷速度（蓄力线性插值）
+	var charge_ratio := clampf(grenade_charge_time / grenade_charge_max, 0.1, 1.0)
+	var throw_speed := lerpf(grenade_min_speed, grenade_max_speed, charge_ratio)
+
+	# 投掷方向：相机前方 + 略微上扬
+	var throw_dir := (camera.global_transform.basis * Vector3(0, 0.15, -1)).normalized()
+
+	# 实例化手雷弹丸
+	var grenade_scene: PackedScene = load("res://scenes/grenade_projectile.tscn")
+	if grenade_scene == null:
+		return
+	var grenade: RigidBody3D = grenade_scene.instantiate()
+	grenade.global_position = camera.global_position + (camera.global_transform.basis * Vector3(0.15, -0.15, -0.8))
+	grenade.grenade_type = selected_grenade_type
+	grenade.linear_velocity = throw_dir * throw_speed
+	get_parent().add_child(grenade)
+
+	grenade_charge_time = 0.0
+
+	# 通知 HUD 手雷数量已变化（信号驱动，避免每帧轮询）
+	grenades_changed.emit(grenades, selected_grenade_type)
 
 # Initiates the weapon changing animation (tween)
 
@@ -762,6 +1007,7 @@ func action_reload(index: int) -> void:
 	if magazine[index] >= w.magazine_size: return
 	if get_reserve(w) <= 0: return
 
+	_stop_beam_active()
 	is_reloading = true
 	reload_index = index
 	# issue 05：有效换弹时间 = 基础值 × reload_time_multiplier（升级 -10% 换弹 = ×0.9）
@@ -1069,3 +1315,55 @@ func _start_escape() -> void:
 	if _last_move_dir.length() < 0.01:
 		_last_move_dir = -transform.basis.z
 	_set_stuck_state(StuckState.ESCAPING)
+
+# === issue 03：手雷抛物线预览 ===
+
+## 计算抛物线采样点（世界坐标），返回 Array[Vector3]
+func _get_arc_points(origin: Vector3, direction: Vector3, speed: float, steps: int = arc_preview_steps, dt: float = arc_preview_dt) -> Array[Vector3]:
+	var points: Array[Vector3] = []
+	var vel := direction * speed
+	var pos := origin
+	var grav := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity_vec := Vector3(0, -grav, 0)
+	for _i in range(steps):
+		pos += vel * dt
+		vel += gravity_vec * dt
+		points.append(pos)
+		if pos.y <= 0:
+			break
+	return points
+
+## 每帧更新抛物线预览：蓄力中 → 绘制点线；否则 → 隐藏
+func _update_arc_preview() -> void:
+	if not is_charging_grenade:
+		if _arc_preview_mesh.visible:
+			_arc_preview_mesh.visible = false
+			_arc_preview_mesh.mesh = null
+		return
+
+	# 计算当前蓄力对应的投掷速度
+	var charge_ratio := clampf(grenade_charge_time / grenade_charge_max, 0.1, 1.0)
+	var throw_speed := lerpf(grenade_min_speed, grenade_max_speed, charge_ratio)
+	var throw_dir := (camera.global_transform.basis * Vector3(0, 0.15, -1)).normalized()
+
+	# 起点：与 _throw_grenade 一致的投掷点（世界坐标）
+	var origin := camera.global_position + (camera.global_transform.basis * Vector3(0.15, -0.15, -0.8))
+
+	# 计算抛物线点（世界坐标），转为 CameraItem 本地坐标
+	var world_points := _get_arc_points(origin, throw_dir, throw_speed)
+	if world_points.is_empty():
+		return
+
+	var local_points: Array[Vector3] = []
+	for wp in world_points:
+		local_points.append(camera_item.to_local(wp))
+
+	# 构建 ImmediateMesh 绘制离散点（白色小方点）
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_POINTS, _arc_preview_material)
+	for lp in local_points:
+		im.surface_add_vertex(lp)
+	im.surface_end()
+
+	_arc_preview_mesh.mesh = im
+	_arc_preview_mesh.visible = true

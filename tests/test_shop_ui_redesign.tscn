@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://btestshopredesign22"]
+
+[ext_resource type="Script" path="res://tests/test_shop_ui_redesign.gd" id="1_test"]
+
+[node name="TestShopRedesign" type="Node3D"]
+script = ExtResource("1_test")

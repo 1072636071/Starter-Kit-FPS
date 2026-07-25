@@ -1,6 +1,6 @@
 # 23 — 手雷投掷系统（G 键 + EMP + 破片）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 09
 

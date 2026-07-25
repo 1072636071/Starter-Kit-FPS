@@ -1,6 +1,6 @@
 # 27 — 平衡调优 + 手感打磨
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 10–26
 

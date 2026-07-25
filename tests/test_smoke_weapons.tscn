@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://btestsmokeweapons01"]
+
+[ext_resource type="Script" path="res://tests/test_smoke_weapons.gd" id="1_test"]
+
+[node name="TestSmokeWeapons" type="Node3D"]
+script = ExtResource("1_test")

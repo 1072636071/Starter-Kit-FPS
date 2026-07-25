@@ -38,6 +38,9 @@ signal game_over(stats: Dictionary)
 signal kills_changed(count: int)
 ## issue 08：宝箱奖励选择后发射（供测试与 HUD）
 signal chest_reward_selected(reward_id: StringName)
+## issue 24：宝箱随机武器满槽时发射，由 chest_ui 监听以展示替换对话框
+## 参数为 null 表示奖励已直接发放（空槽），chest_ui 可直接清理
+signal chest_weapon_replace_offered(weapon: Weapon)
 
 # === 本局状态 ===
 var gold: int = 0
@@ -47,6 +50,8 @@ var wave: int = 0
 var kills: int = 0
 var gold_earned_total: int = 0
 var alive_count: int = 0
+# issue 24：宝箱替换武器暂存（满槽时暂存待替换武器，确认后消费）
+var _pending_replace_weapon: Weapon = null
 
 var rng: RandomNumberGenerator
 
@@ -54,6 +59,20 @@ var rng: RandomNumberGenerator
 # 键为怪物类型 id；条目含刷出成本 / 击杀奖励（金币 = 经验，同值）/ 解锁波次 / 场景。
 # 初始仅 3 种；issue 10–14 向本表追加其余 13 种敌人条目。
 # 旧的 3 个 @export 场景字段保留作测试注入与过渡兼容，优先级高于本表 scene。
+#
+# --- issue 27：平衡调优依据 ---
+# 波次预算公式：budget(N) = 60 × 1.2^(N-1)
+#   - 波 1 预算 60  → 12 只 melee（cost=5）——新手清场无压力
+#   - 波 4 预算 104 → 约 8 只 ranged（cost=8）+ 5 只 melee —— 引入远程压力
+#   - 波 7 预算 179 → 混合 3 种，enemy（cost=10）入场 —— 难度跃升
+#   - 波 10 预算 309 → 约 30+ 只怪物，需策略性弹药管理
+#   - 波 15 预算 773 → 大量精英堆叠，高手能撑但难以存活
+# 奖励 = cost（金币=经验同值），单波收益约为 budget 的 1.0 倍。
+# 弹药经济：初始手枪弹 36 发 + 弹匣 12 = 48 发足够清前 2 波；
+#           宝箱武器掉落（低档 60% 权重）不跳过经济系统；
+#           高稀有度弹种（狙击/榴弹）需策略性购买。
+# 耐久：blaster 120 / blaster-repeater 100，激励多枪轮换；
+#       耐久归零爆枪频率适中（非每波必爆、非一把枪通关）。
 const ENEMY_CONFIG: Dictionary = {
 	&"monster_melee": {
 		"cost": 5, "reward": 5, "min_wave": 1,
@@ -89,12 +108,15 @@ const UPGRADE_POOL := [
 	{"id": &"reload_time", "name": "-10% 换弹时间", "desc": "换弹时间 ×0.9"},
 ]
 
-# issue 08：宝箱奖励池（4 项，即时结算，金币/经验按波次缩放）
+# issue 08：宝箱奖励池（6 项，即时结算，金币/经验按波次缩放）
+# issue 24：追加 random_weapon 和 grenade_supply
 const CHEST_REWARD_POOL := [
 	{"id": &"gold_bonus", "name": "金币大礼包", "desc": "获得 20+5×波数 金币"},
 	{"id": &"heal_x3", "name": "血包 ×3", "desc": "立即回复 75 点生命"},
 	{"id": &"xp_bonus", "name": "经验大礼包", "desc": "获得 15+3×波数 经验"},
 	{"id": &"ammo_refill", "name": "备弹补给", "desc": "所有武器备弹回满"},
+	{"id": &"random_weapon", "name": "随机武器", "desc": "获得一把随机武器"},
+	{"id": &"grenade_supply", "name": "手雷补给", "desc": "EMP+1、破片+1"},
 ]
 
 func _ready() -> void:
@@ -191,6 +213,10 @@ func apply_chest_reward(reward_id: StringName) -> void:
 					_player.ammo_reserve[key] = maxi(int(_player.ammo_reserve.get(key, 0)), cap)
 				if _player.has_method("_emit_ammo_updated"):
 					_player._emit_ammo_updated()
+		&"random_weapon":
+			_apply_random_weapon_reward()
+		&"grenade_supply":
+			_apply_grenade_supply_reward()
 
 ## issue 05：从升级池抽 count 个不重复项（用本局 rng 打乱取前 N）
 func _pick_upgrades(count: int) -> Array:
@@ -448,6 +474,149 @@ func _maybe_spawn_chest() -> void:
 func _on_chest_reward_selected(reward_id: StringName) -> void:
 	apply_chest_reward(reward_id)
 	chest_reward_selected.emit(reward_id)
+
+# ============================================================
+# issue 24：宝箱奖励扩展 — 随机武器 + 手雷补给
+# ============================================================
+
+## 从 res://weapons/ 目录加载全部 .tres 武器，按稀有度加权随机抽取一把
+## 低档（cost ≤ 70）：60% | 中档（71–120）：25% | 高档（>120）：15%
+## 过滤已持有同款武器（issue 30 去重）
+## 若玩家有空槽 → 直接装备（满耐久）
+## 若 3 槽全满 → 发射 chest_weapon_replace_offered 信号，由 chest_ui 弹替换对话框
+func _apply_random_weapon_reward() -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+
+	var pool := WeaponUtils.load_all_weapons()
+	if pool.is_empty():
+		return
+
+	# issue 30：过滤已持有同款武器（去重）
+	# issue 24 spec 可选优化，提前实现——保留
+	var owned_resources: Array = []
+	for w in _player.weapons:
+		if w != null:
+			owned_resources.append(w)
+	var filtered: Array = []
+	for w in pool:
+		if w not in owned_resources:
+			filtered.append(w)
+	if not filtered.is_empty():
+		pool = filtered
+	# 若全部已持有，仍从全池抽（降级，不做金币补偿）
+
+	# 按 cost 分档加权
+	var low: Array = []
+	var mid: Array = []
+	var high: Array = []
+	for w in pool:
+		var cost: int = w.weapon_cost
+		if cost <= 70:
+			low.append(w)
+		elif cost <= 120:
+			mid.append(w)
+		else:
+			high.append(w)
+
+	var chosen: Weapon = null
+	var roll := rng.randf()
+	if roll < 0.60:
+		chosen = _pick_from_weighted(low)
+	elif roll < 0.85:
+		chosen = _pick_from_weighted(mid)
+	else:
+		chosen = _pick_from_weighted(high)
+
+	if chosen == null:
+		return
+
+	# 有空槽 → 直接装备
+	if _player.weapons.size() < _player.MAX_WEAPONS:
+		_player.weapons.append(chosen)
+		_player.magazine.append(chosen.magazine_size)
+		_player.weapon_durability.append(chosen.durability_max)
+		if not _player.ammo_reserve.has(chosen.ammo_type):
+			_player.ammo_reserve[chosen.ammo_type] = _player.INITIAL_AMMO_PER_TYPE
+		if _player.has_method("_emit_ammo_updated"):
+			_player._emit_ammo_updated()
+		if _player.weapon == null or _player.weapon_index < 0:
+			_player.initiate_change_weapon(0)
+		# 通知 chest_ui 奖励已完成（null = 无需替换）
+		chest_weapon_replace_offered.emit(null)
+	else:
+		# 3 槽全满 → 发射替换信号，由 chest_ui 弹替换对话框
+		_pending_replace_weapon = chosen
+		chest_weapon_replace_offered.emit(chosen)
+
+## 由 chest_ui 调用：确认替换宝箱武器到指定槽位
+func confirm_chest_weapon_replace(slot_idx: int) -> void:
+	if _pending_replace_weapon == null:
+		return
+	if _player == null or not is_instance_valid(_player):
+		_pending_replace_weapon = null
+		return
+	if slot_idx < 0 or slot_idx >= _player.weapons.size():
+		_pending_replace_weapon = null
+		return
+
+	var w: Weapon = _pending_replace_weapon
+	_player.weapons[slot_idx] = w
+	_player.weapon_durability[slot_idx] = w.durability_max
+	_player.magazine[slot_idx] = w.magazine_size
+	if not _player.ammo_reserve.has(w.ammo_type):
+		_player.ammo_reserve[w.ammo_type] = _player.INITIAL_AMMO_PER_TYPE
+	if _player.has_method("_emit_ammo_updated"):
+		_player._emit_ammo_updated()
+	_pending_replace_weapon = null
+
+## 取消宝箱武器替换（玩家拒绝），做金币补偿
+func cancel_chest_weapon_replace() -> void:
+	if _pending_replace_weapon != null:
+		add_gold(30)
+		_pending_replace_weapon = null
+
+## 返回当前各武器槽位名称列表（用于 chest_ui 渲染替换对话框）
+## 返回 Array[String]：每槽返回武器 display_name，空槽返回 "（空）"
+func get_weapon_slot_names() -> Array:
+	var names: Array = []
+	if _player == null or not is_instance_valid(_player):
+		return names
+	for i in range(_player.weapons.size()):
+		var slot_w: Weapon = _player.weapons[i]
+		names.append(slot_w.weapon_display_name if slot_w != null else "（空）")
+	return names
+
+## 手雷补给：EMP +1、破片 +1，上限 max_grenades（默认 5）
+## 若两类均已到上限 → 补偿 30 金
+func _apply_grenade_supply_reward() -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+
+	var emp_key: StringName = &"emp"
+	var frag_key: StringName = &"frag"
+	var max_g: int = _player.max_grenades
+
+	var emp_current: int = int(_player.grenades.get(emp_key, 0))
+	var frag_current: int = int(_player.grenades.get(frag_key, 0))
+
+	var emp_capped: bool = emp_current >= max_g
+	var frag_capped: bool = frag_current >= max_g
+
+	if emp_capped and frag_capped:
+		add_gold(30)
+		return
+
+	if not emp_capped:
+		_player.grenades[emp_key] = mini(emp_current + 1, max_g)
+	if not frag_capped:
+		_player.grenades[frag_key] = mini(frag_current + 1, max_g)
+
+## 从数组中等概率随机取一个元素（数组非空）
+func _pick_from_weighted(arr: Array) -> Weapon:
+	if arr.is_empty():
+		return null
+	return arr[rng.randi_range(0, arr.size() - 1)]
 
 # ============================================================
 # 玩家死亡 → 游戏结束

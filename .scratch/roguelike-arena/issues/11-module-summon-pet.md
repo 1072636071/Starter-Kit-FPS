@@ -1,6 +1,6 @@
 # 11 — 召唤模块（SummonPet + CubePet）
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Refs: ADR 022, issue 09
 
@@ -16,8 +16,8 @@ Refs: ADR 022, issue 09
 
 ### CubePet（独立实体）
 
-- [ ] 从 `kenney_cube-pets_1.0` 挑选 1 种宠物 GLB 导入 `models/monsters/`
-- [ ] 新建 `objects/pet_cube.tscn` + `objects/pet_cube.gd`：
+- [x] 从 `kenney_cube-pets_1.0` 挑选 1 种宠物 GLB 导入 `models/monsters/`
+- [x] 新建 `objects/pet_cube.tscn` + `objects/pet_cube.gd`：
   - `extends CharacterBody3D`（**不是** `monster_base` 子类）
   - `@export` 参数：`health = 20`、`move_speed = 4.0`、`damage = 5`、`attack_cooldown = 1.0`
   - 简单 AI：`_physics_process` 内用 `NavigationAgent3D` 追玩家 → 2m 内扣血 → 冷却
@@ -26,11 +26,11 @@ Refs: ADR 022, issue 09
 
 ### SummonPet 模块
 
-- [ ] 新建 `scripts/modules/module_summon_pet.gd`，继承 `EnemyModule`，实现：
+- [x] 新建 `scripts/modules/module_summon_pet.gd`，继承 `EnemyModule`，实现：
   - `module_setup(enemy)` — 加载 pet 场景引用
   - `on_enter_state(AIState.CHASE)` — 检查冷却就绪 → 在宿主周围 2–3m 随机位置 `instantiate(pet_scene)`，记录到 `_active_pets: Array`
   - `on_death()` — 遍历 `_active_pets` 全部 `queue_free()`
-- [ ] `@export` 参数：
+- [x] `@export` 参数：
   - `pet_scene: PackedScene`（默认指向 `pet_cube.tscn`）
   - `pet_count: int = 3`
   - `pet_cooldown: float = 8.0`（冷却中不再召唤）
@@ -38,7 +38,7 @@ Refs: ADR 022, issue 09
 
 ### 测试
 
-- [ ] `tests/test_module_summon_pet.gd`：
+- [x] `tests/test_module_summon_pet.gd`：
   - 创建临时怪物挂 SummonPet 模块，触发 CHASE
   - 断言 3 只 pet spawned、位置在宿主 2–3m 内
   - 模拟时间推进 5s（冷却内）→ 断言不再重复召唤

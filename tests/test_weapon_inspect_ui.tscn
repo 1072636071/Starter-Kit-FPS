@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://btestinspect25ui"]
+
+[node name="TestWeaponInspectUI" type="Node"]
+script = ExtResource("1_test_script")
+
+[ext_resource type="Script" path="res://tests/test_weapon_inspect_ui.gd" id="1_test_script"]

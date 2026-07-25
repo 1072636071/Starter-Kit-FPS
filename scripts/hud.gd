@@ -10,8 +10,9 @@ const HIGHLIGHT_COLOR := Color(1, 1, 1, 1)
 const DIM_COLOR := Color(1, 1, 1, 0.35)
 const EMPTY_COLOR := Color(1, 0.27, 0.27, 1)
 
+
 var _weapons: Array = [] # Array[Weapon]
-# 每行的子节点引用：name_label / ammo_label / progress
+# 每行的子节点引用：name_label / ammo_label / progress / durability_bar
 var _rows: Array = [] # Array[Dictionary]
 var _current_index := 0
 var _reload_tween: Tween
@@ -32,6 +33,9 @@ var _wave_number: int = 0
 @onready var _chest_prompt: Label = _build_chest_prompt()
 @onready var _stuck_prompt: Label = _build_stuck_prompt()
 
+# issue 23：手雷 HUD 元素
+@onready var _grenade_container: Control = _build_grenade_container()
+
 # 武器检视 UI（TAB 打开）
 var _weapon_inspect_ui: Control
 
@@ -44,6 +48,8 @@ func _ready() -> void:
 	add_child(_chest_prompt)
 	# issue 05：卡住提示
 	add_child(_stuck_prompt)
+	# issue 23：手雷显示
+	add_child(_grenade_container)
 
 	# 武器检视 UI（ADR 022 配套，TAB 打开）
 	_weapon_inspect_ui = _build_weapon_inspect_ui()
@@ -53,6 +59,8 @@ func _ready() -> void:
 	call_deferred("_bind_player")
 	# issue 07：绑定 RunDirector 信号
 	call_deferred("_bind_run_director")
+
+# issue 23：手雷 HUD 由 player.grenades_changed 信号驱动，不再每帧轮询
 
 func _bind_player() -> void:
 	var player := get_node_or_null("../Player")
@@ -77,6 +85,11 @@ func _bind_player() -> void:
 	_shield_rate_label.text = "%.0f/s" % (player.shield_regen_rate + player.shield_regen_rate_bonus)
 	# 用 player 当前快照做首次渲染（issue 09：备弹经弹药池快照展开）
 	_on_ammo_updated(player.weapon_index, player.magazine.duplicate(), player.get_reserves_snapshot())
+	# issue 23：手雷 HUD 信号驱动
+	if player.has_signal("grenades_changed"):
+		player.grenades_changed.connect(_on_grenades_changed)
+		# 首次渲染
+		_on_grenades_changed(player.grenades, player.selected_grenade_type)
 
 func _build_list() -> VBoxContainer:
 	var vbox := VBoxContainer.new()
@@ -134,10 +147,22 @@ func _build_rows() -> void:
 		progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row_vbox.add_child(progress)
 
+		# issue 20：耐久度条（武器名同宽，高 4px，在换弹进度条下方）
+		var durability_bar := ProgressBar.new()
+		durability_bar.name = "DurabilityBar"
+		durability_bar.min_value = 0.0
+		durability_bar.max_value = 1.0
+		durability_bar.value = 1.0
+		durability_bar.custom_minimum_size = Vector2(120, 4)
+		durability_bar.show_percentage = false
+		durability_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row_vbox.add_child(durability_bar)
+
 		_rows.append({
 			"name_label": name_label,
 			"ammo_label": ammo_label,
-			"progress": progress
+			"progress": progress,
+			"durability_bar": durability_bar
 		})
 
 func _on_ammo_updated(weapon_index: int, magazines: Array, reserves: Array) -> void:
@@ -160,10 +185,46 @@ func _on_ammo_updated(weapon_index: int, magazines: Array, reserves: Array) -> v
 			ammo_label.add_theme_color_override("font_color", HIGHLIGHT_COLOR if is_current else DIM_COLOR)
 			name_label.add_theme_color_override("font_color", HIGHLIGHT_COLOR if is_current else DIM_COLOR)
 
+		# issue 20：更新耐久度条
+		_update_durability_bar(row, i, is_current)
+
+	# issue 23：弹药更新时也刷新手雷 HUD（通过信号方式）
+	if _player and is_instance_valid(_player) and _player.has_signal("grenades_changed"):
+		_on_grenades_changed(_player.grenades, _player.selected_grenade_type)
+
 	# 若武器检视 UI 打开，实时刷新弹药显示
 	if _weapon_inspect_ui and is_instance_valid(_weapon_inspect_ui) and _weapon_inspect_ui.visible:
 		if _weapon_inspect_ui.has_method("refresh_ammo"):
 			_weapon_inspect_ui.refresh_ammo()
+
+# issue 20：更新单行耐久度条
+func _update_durability_bar(row: Dictionary, i: int, is_current: bool) -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+	var bar: ProgressBar = row.get("durability_bar", null)
+	if bar == null:
+		return
+	var durabilities: Array = _player.weapon_durability
+	var weapons_arr: Array = _player.weapons
+	if i >= weapons_arr.size() or i >= durabilities.size():
+		bar.visible = false
+		return
+	var w: Weapon = weapons_arr[i]
+	if w == null or w.durability_max <= 0:
+		bar.visible = false
+		return
+	var ratio: float = float(durabilities[i]) / float(w.durability_max)
+	bar.value = ratio
+	bar.visible = true
+	# 颜色选择（委托给 Weapon 静态方法，武器检视 UI 等也可复用）
+	var base_color := Weapon.durability_color(ratio)
+	# 当前武器略微提亮
+	if is_current:
+		base_color = base_color.lightened(0.15)
+	# 设置填充样式
+	var style := StyleBoxFlat.new()
+	style.bg_color = base_color
+	bar.add_theme_stylebox_override("fill", style)
 
 func _on_reload_started(weapon_index: int, reload_time: float) -> void:
 	# 只为当前正在换弹的武器行显示进度条
@@ -439,6 +500,90 @@ func _build_stuck_prompt() -> Label:
 func _on_stuck_state_changed(new_state) -> void:
 	# StuckState.NORMAL = 0, STUCK = 1, ESCAPING = 2
 	_stuck_prompt.visible = (new_state == 1)  # 仅 STUCK 时显示
+
+# ============================================================
+# issue 23：手雷 HUD 显示
+# ============================================================
+
+var _grenade_emp_label: Label
+var _grenade_frag_label: Label
+var _grenade_emp_icon: Label
+var _grenade_frag_icon: Label
+
+func _build_grenade_container() -> Control:
+	var container := Control.new()
+	container.name = "GrenadeContainer"
+	# 放在弹药列表左侧
+	container.anchor_left = 1.0
+	container.anchor_top = 1.0
+	container.anchor_right = 1.0
+	container.anchor_bottom = 1.0
+	container.offset_left = -380.0
+	container.offset_top = -200.0
+	container.offset_right = -230.0
+	container.offset_bottom = -20.0
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var vbox := VBoxContainer.new()
+	vbox.name = "GrenadeVBox"
+	vbox.alignment = BoxContainer.ALIGNMENT_END
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(vbox)
+
+	# 标题
+	var title := Label.new()
+	title.text = "手雷"
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(title)
+
+	# EMP 行
+	var emp_row := HBoxContainer.new()
+	emp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grenade_emp_icon = Label.new()
+	_grenade_emp_icon.text = "⚡"
+	_grenade_emp_icon.add_theme_font_size_override("font_size", 18)
+	_grenade_emp_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	emp_row.add_child(_grenade_emp_icon)
+	_grenade_emp_label = Label.new()
+	_grenade_emp_label.text = "EMP: 0"
+	_grenade_emp_label.add_theme_font_size_override("font_size", 18)
+	_grenade_emp_label.add_theme_color_override("font_color", DIM_COLOR)
+	_grenade_emp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	emp_row.add_child(_grenade_emp_label)
+	vbox.add_child(emp_row)
+
+	# 破片行
+	var frag_row := HBoxContainer.new()
+	frag_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grenade_frag_icon = Label.new()
+	_grenade_frag_icon.text = "💥"
+	_grenade_frag_icon.add_theme_font_size_override("font_size", 18)
+	_grenade_frag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frag_row.add_child(_grenade_frag_icon)
+	_grenade_frag_label = Label.new()
+	_grenade_frag_label.text = "破片: 0"
+	_grenade_frag_label.add_theme_font_size_override("font_size", 18)
+	_grenade_frag_label.add_theme_color_override("font_color", DIM_COLOR)
+	_grenade_frag_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frag_row.add_child(_grenade_frag_label)
+	vbox.add_child(frag_row)
+
+	return container
+
+# issue 23：手雷 HUD 刷新（信号驱动，不再每帧轮询 _player）
+func _on_grenades_changed(grenades_dict: Dictionary, selected_type: StringName) -> void:
+	var emp_count: int = grenades_dict.get(&"emp", 0)
+	var frag_count: int = grenades_dict.get(&"frag", 0)
+	_grenade_emp_label.text = "EMP: %d" % emp_count
+	_grenade_frag_label.text = "破片: %d" % frag_count
+
+	# 高亮当前选中类型
+	_grenade_emp_label.add_theme_color_override("font_color",
+		HIGHLIGHT_COLOR if selected_type == &"emp" else DIM_COLOR)
+	_grenade_frag_label.add_theme_color_override("font_color",
+		HIGHLIGHT_COLOR if selected_type == &"frag" else DIM_COLOR)
 
 # ============================================================
 # 武器检视 UI（TAB 打开，ADR 022 配套）

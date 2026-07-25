@@ -1,6 +1,6 @@
 # 21 — 弹药池重构 + 丢弃拾取
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 09/20
 

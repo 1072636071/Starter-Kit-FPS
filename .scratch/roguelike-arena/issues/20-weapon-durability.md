@@ -1,6 +1,6 @@
 # 20 — 耐久度系统（扣减 + 爆枪 + HUD）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 09/19
 

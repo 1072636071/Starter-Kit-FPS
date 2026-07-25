@@ -1,3 +1,5 @@
+gear-godot-mcp 可以提供 godot能力。
+
 # AGENTS.md
 
 工程技能（Matt Pocock 风格）的配置与约定。
