@@ -51,6 +51,7 @@ var _melee_active := false
 # 剑初始变换（_ready 缓存，action_melee 重置基准，防连续挥砍残留）
 var _melee_sword_init_pos: Vector3
 var _melee_sword_init_rot: Vector3
+var _melee_sword_init_scale: Vector3
 const SWING_DURATION := 0.6 # 总挥砍时长，必须 ≤ melee_cooldown（见 ADR 019）
 const ACTIVE_START := 0.2   # monitoring 开启时机（前摇结束）
 const ACTIVE_END := 0.4     # monitoring 关闭时机（后摇开始）
@@ -188,6 +189,7 @@ func _ready():
 		# 缓存剑初始变换（ADR 019 防漂移/连续挥砍重置基准，挥砍中不被动）
 		_melee_sword_init_pos = melee_viewmodel_instance.position
 		_melee_sword_init_rot = melee_viewmodel_instance.rotation_degrees
+		_melee_sword_init_scale = melee_viewmodel_instance.scale
 
 	# 命中区深度跟随 melee_reach（@export，可 inspector 调参，见 PRD/CONTEXT「Melee Tuning」）
 	# 复制 BoxShape3D 避免改写场景内联 sub-resource
@@ -685,18 +687,16 @@ func action_melee() -> void:
 	var gun_start_pos: Vector3 = container_offset
 
 	# 强制重置到初始值（防连续挥砍残留：kill 后剑/枪可能停在过渡中途）
+	# 同时预设剑 scale 为 0.01（出场缩放动画的起点）
 	melee_viewmodel_instance.rotation_degrees = sword_start_rot
 	melee_viewmodel_instance.position = sword_start_pos
+	melee_viewmodel_instance.scale = Vector3(0.01, 0.01, 0.01)
 	container.position = gun_start_pos
 
-	# 显示 viewmodel + 标记过渡活跃（跳过 _process 的 container lerp）
-	melee_viewmodel_instance.visible = true
-	_melee_active = true
-
 	# 过渡动画 Tween 链（ADR 019）：
-	# 段1 前摇(0.2s 并行)：枪下沉 + 剑从屏外滑入 windup 终点
+	# 段1 前摇(0.2s 并行)：枪下沉 + 剑从屏外滑入 + scale 0→1
 	# 段2 活跃帧(0.2s)：剑下劈（枪保持下沉位）
-	# 段3 后摇(0.2s 并行)：剑滑出屏外 + 枪回升复位
+	# 段3 后摇(0.2s 并行)：剑滑出屏外 + 枪回升 + scale 1→0
 	# 收尾：剑隐藏 + _melee_active=false + 剑变换复位
 	var tween := get_tree().create_tween()
 	melee_swing_tween = tween
@@ -710,31 +710,36 @@ func action_melee() -> void:
 	# 下劈终点（活跃帧）
 	var slash_pos := sword_start_pos - WINDUP_POS * 2
 	var slash_rot := sword_start_rot - WINDUP_ROT * 2
+	var init_scale: Vector3 = _melee_sword_init_scale
 
-	# 段1：前摇 0.2s（并行：枪下沉 + 剑滑入）
-	# 先瞬移剑到屏外起点，再 tween 到 windup 终点
+	# 段1：前摇 0.2s（并行：枪下沉 + 剑从屏外滑入 + scale 0.01→1.0）
+	# 瞬移到屏外起点发生在 visible=true 之前，避免可见跳跃
 	melee_viewmodel_instance.position = intro_pos
 	melee_viewmodel_instance.rotation_degrees = intro_rot
+	melee_viewmodel_instance.visible = true
+	_melee_active = true
 	tween.tween_property(container, "position",
 		Vector3(gun_start_pos.x, gun_start_pos.y + GUN_DROP_Y, gun_start_pos.z), 0.2)
 	tween.parallel().tween_property(melee_viewmodel_instance, "position", windup_pos, 0.2)
 	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", windup_rot, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "scale", init_scale, 0.2)
 
 	# 段2：活跃帧 0.2s（剑下劈，枪保持）
 	tween.tween_property(melee_viewmodel_instance, "position", slash_pos, 0.2)
 	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", slash_rot, 0.2)
 
-	# 段3：后摇 0.2s（并行：剑滑出屏外 + 枪回升）
+	# 段3：后摇 0.2s（并行：剑滑出屏外 + 枪回升 + scale 1.0→0.01）
 	tween.tween_property(container, "position", gun_start_pos, 0.2)
 	tween.parallel().tween_property(melee_viewmodel_instance, "position", intro_pos, 0.2)
 	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", intro_rot, 0.2)
+	tween.parallel().tween_property(melee_viewmodel_instance, "scale", Vector3(0.01, 0.01, 0.01), 0.2)
 
-	# 收尾：隐藏剑 + 释放 _melee_active + 复位剑变换到 start
-	#（intro_pos 不是 start，需显式复位防漂移）
+	# 收尾：隐藏剑 + 释放 _melee_active + 复位剑变换/scale 到 start
 	tween.tween_callback(func():
 		melee_viewmodel_instance.visible = false
 		melee_viewmodel_instance.position = sword_start_pos
 		melee_viewmodel_instance.rotation_degrees = sword_start_rot
+		melee_viewmodel_instance.scale = init_scale
 		_melee_active = false
 	)
 
