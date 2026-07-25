@@ -47,8 +47,16 @@ func _ready() -> void:
 	# 怪物：Monsters 节点的直接子节点（main.tscn 中 Main/Monsters/{MeleeA,...}）
 	# 用延迟一帧查找，确保场景树已完全实例化
 	call_deferred("_refresh_monsters")
+	# 监听 RunDirector 波次开始信号，动态刷新怪物列表（F 键开波后新怪物入列）
+	var run_director := get_tree().get_first_node_in_group("run_director")
+	if run_director and run_director.has_signal("wave_started"):
+		run_director.wave_started.connect(_on_wave_started)
 	# 取默认主题字体用于绘制敌人计数
 	_count_font = get_theme_default_font()
+
+## 波次开始后延迟刷新怪物列表（等怪物实例化并加入场景树）
+func _on_wave_started(_wave_number: int) -> void:
+	call_deferred("_refresh_monsters")
 
 func _refresh_monsters() -> void:
 	_monsters.clear()

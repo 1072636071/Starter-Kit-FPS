@@ -63,7 +63,7 @@ viewport_path = NodePath("MinimapViewport")
 ; 怪物真实 mesh 已挪到 layer 3（见 monster_melee/ranged.tscn），故俯视渲染无敌人 blob。
 [node name="MinimapViewport" type="SubViewport" parent="."]
 transparent_bg = true
-size = Vector2i(256, 256)
+size = Vector2i(512, 512)
 render_target_update_mode = 4
 
 [node name="MinimapCamera" type="Camera3D" parent="MinimapViewport"]
@@ -119,7 +119,7 @@ label_settings = SubResource("LabelSettings_fpmwk")
 vertical_alignment = 2
 
 ; T2（minimap）：圆形小地图 UI 容器——挂在 HUD（CanvasLayer）下，
-; 锚定右上角（避开左下血条 / 右下弹药列表），240×240px，距屏边 20px。
+; 锚定右上角（避开左下血条 / 右下弹药列表），320×320px，距屏边 20px。
 ; 圆形由子节点 Background 上的 ShaderMaterial 径向 alpha 遮罩实现。
 ; 玩家箭头 + 敌人圆点（T3）+ 圆形边框 + 敌人计数 由 minimap.gd 在 Blips 层绘制。
 [node name="Minimap" type="Control" parent="HUD"]
@@ -127,10 +127,10 @@ anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_left = -260.0
+offset_left = -340.0
 offset_top = 20.0
 offset_right = -20.0
-offset_bottom = 260.0
+offset_bottom = 340.0
 grow_horizontal = 0
 grow_vertical = 2
 mouse_filter = 2
