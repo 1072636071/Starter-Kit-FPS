@@ -333,7 +333,7 @@ func _build_weapon_row(w: Weapon, shop_idx: int) -> HBoxContainer:
 	row.add_child(dura_bar)
 
 	# 购买按钮
-	var has_empty_slot := _player.weapons.size() < 3
+	var has_empty_slot: bool = _player.weapons.size() < 3
 	if has_empty_slot:
 		var buy_btn := Button.new()
 		buy_btn.text = "购买"
@@ -907,7 +907,7 @@ func _refresh_zone_labels(zone: VBoxContainer, target_label_name: String,
 				name_label = child
 		if target_label == null or name_label == null:
 			continue
-		var display_name := name_label.text
+		var display_name: String = (name_label as Label).text
 		for shop_type in shop_types:
 			var cfg: Dictionary = config.get(shop_type, {})
 			if cfg.get("display", "") == display_name:
@@ -932,10 +932,10 @@ func _refresh_all_button_states() -> void:
 		return btn.name == "BuyGrenadeBtn", gold_amount, func(btn: Button, row: HBoxContainer) -> void:
 			# 额外条件：手雷已达上限则强制禁用
 			for c in row.get_children():
-				if c is Label and c.name != "GrenadeCountLabel" and "金" not in c.text:
+				if c is Label and c.name != "GrenadeCountLabel" and "金" not in (c as Label).text:
 					for gt in _shop_grenade_types:
 						var cfg: Dictionary = GRENADE_CONFIG.get(gt, {})
-						if cfg.get("display", "") == c.text:
+						if cfg.get("display", "") == (c as Label).text:
 							var count: int = _player.grenades.get(gt, 0)
 							if count >= _player.max_grenades:
 								btn.disabled = true
@@ -956,7 +956,7 @@ func _refresh_zone_buttons(zone: VBoxContainer, match_func: Callable, gold_amoun
 				# 从行中找价格标签
 				for c in row.get_children():
 					if c is Label and "金" in c.text:
-						var price_str := c.text.replace(" 金", "").strip_edges()
+						var price_str: String = (c as Label).text.replace(" 金", "").strip_edges()
 						if price_str.is_valid_int():
 							child.disabled = gold_amount < int(price_str)
 						break

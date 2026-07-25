@@ -71,13 +71,20 @@ func _bind_player() -> void:
 	_player = player
 	_weapons = player.weapons
 	_build_rows()
-	player.ammo_updated.connect(_on_ammo_updated)
-	player.reload_started.connect(_on_reload_started)
-	player.reload_ended.connect(_on_reload_ended)
+	if not player.ammo_updated.is_connected(_on_ammo_updated):
+		player.ammo_updated.connect(_on_ammo_updated)
+	if not player.reload_started.is_connected(_on_reload_started):
+		player.reload_started.connect(_on_reload_started)
+	if not player.reload_ended.is_connected(_on_reload_ended):
+		player.reload_ended.connect(_on_reload_ended)
 	# issue 05：卡住状态信号
 	if player.has_signal("stuck_state_changed"):
 		player.stuck_state_changed.connect(_on_stuck_state_changed)
-	# 护盾 HUD 信号
+	# 护盾 HUD 信号（先断开再连接防重复）
+	if player.shield_updated.is_connected(_on_shield_updated):
+		player.shield_updated.disconnect(_on_shield_updated)
+	if player.shield_cooldown_changed.is_connected(_on_shield_cooldown_changed):
+		player.shield_cooldown_changed.disconnect(_on_shield_cooldown_changed)
 	player.shield_updated.connect(_on_shield_updated)
 	player.shield_cooldown_changed.connect(_on_shield_cooldown_changed)
 	# 初始护盾显示
@@ -103,8 +110,8 @@ func _build_list() -> VBoxContainer:
 	vbox.offset_top = -200.0
 	vbox.offset_right = -20.0
 	vbox.offset_bottom = -20.0
-	vbox.grow_horizontal = 0
-	vbox.grow_vertical = 0
+	vbox.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	vbox.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	vbox.alignment = BoxContainer.ALIGNMENT_END
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return vbox
@@ -243,7 +250,7 @@ func _on_reload_started(weapon_index: int, reload_time: float) -> void:
 			progress.visible = false
 			progress.value = 0.0
 
-func _on_reload_ended(weapon_index: int, cancelled: bool) -> void:
+func _on_reload_ended(_weapon_index: int, _cancelled: bool) -> void:
 	for i in range(_rows.size()):
 		var row: Dictionary = _rows[i]
 		var progress: ProgressBar = row["progress"]
@@ -284,7 +291,7 @@ func _on_wave_started(wave_number: int) -> void:
 	update_wave(wave_number)
 	show_wave_prompt(false)
 
-func _on_wave_cleared(wave_number: int, _cleared_by_timeout: bool) -> void:
+func _on_wave_cleared(_wn: int, _cleared_by_timeout: bool) -> void:
 	show_wave_prompt(true)
 
 func _on_kills_changed(count: int) -> void:
@@ -310,20 +317,20 @@ func _on_shield_cooldown_changed(timer: float) -> void:
 # issue 07：公共更新方法（暂停态 UI 显式调用刷新）
 # ============================================================
 
-func update_gold(amount: int) -> void:
+func update_gold(_amount: int) -> void:
 	_refresh_info_label()
 
 func update_xp(_amount: int, _threshold: int) -> void:
 	_refresh_info_label()
 
-func update_level(new_level: int) -> void:
+func update_level(_new_level: int) -> void:
 	_refresh_info_label()
 
 func update_wave(wave_number: int) -> void:
 	_wave_number = wave_number
 	_refresh_info_label()
 
-func update_kills(count: int) -> void:
+func update_kills(_count: int) -> void:
 	_refresh_info_label()
 
 func _refresh_info_label() -> void:
@@ -468,12 +475,12 @@ func _build_chest_prompt() -> Label:
 	l.visible = false
 	return l
 
-func show_chest_prompt(show: bool) -> void:
-	_chest_prompt.visible = show
+func show_chest_prompt(visible_val: bool) -> void:
+	_chest_prompt.visible = visible_val
 
-func show_wave_prompt(show: bool) -> void:
+func show_wave_prompt(visible_val: bool) -> void:
 	_wave_prompt.text = _wave_prompt_text()
-	_wave_prompt.visible = show
+	_wave_prompt.visible = visible_val
 
 # ============================================================
 # issue 05：卡住提示（ADR 016）

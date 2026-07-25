@@ -51,10 +51,10 @@ func _on_body_exited(body: Node3D) -> void:
 	_player_in_range = false
 	_set_hud_chest_prompt(false)
 
-func _set_hud_chest_prompt(show: bool) -> void:
+func _set_hud_chest_prompt(visible_val: bool) -> void:
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud and hud.has_method("show_chest_prompt"):
-		hud.show_chest_prompt(show)
+		hud.show_chest_prompt(visible_val)
 
 func _open_chest() -> void:
 	_opened = true

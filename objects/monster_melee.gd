@@ -74,7 +74,7 @@ func _get_chase_target() -> Vector3:
 	return player.global_position + offset
 
 ## CHASE 状态：朝战术偏移点移动
-func _tick_chase(delta: float) -> void:
+func _tick_chase(_delta: float) -> void:
 	if not player:
 		return
 	if _path_timer <= 0.0:

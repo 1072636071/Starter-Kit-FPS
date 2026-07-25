@@ -1,4 +1,4 @@
-[gd_scene load_steps=3 format=3 uid="uid://dtrapdam0000000000000001"]
+[gd_scene format=3 uid="uid://gp3r3vpw3o05"]
 
 [ext_resource type="Script" path="res://scripts/trap_damage.gd" id="1_trap_damage"]
 

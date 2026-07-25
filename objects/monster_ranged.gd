@@ -154,7 +154,7 @@ func _tick_chase(delta: float) -> void:
 		_start_attack()
 
 # === RETREAT：后退 ===
-func _tick_retreat(delta: float) -> void:
+func _tick_retreat(_delta: float) -> void:
 	if not player:
 		return
 	var to_player := player.global_position - global_position

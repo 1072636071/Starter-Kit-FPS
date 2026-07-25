@@ -191,13 +191,13 @@ signal reload_ended(weapon_index: int, cancelled: bool)
 # issue 23：手雷数量变化信号，HUD 信号驱动而非每帧轮询
 signal grenades_changed(grenades: Dictionary, selected_type: StringName)
 
-@onready var camera = $Head/Camera
-@onready var muzzle = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Muzzle
-@onready var container = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Container
-@onready var camera_item = $Head/Camera/SubViewportContainer/SubViewport/CameraItem
+@onready var camera: Camera3D = $Head/Camera
+@onready var muzzle: Node3D = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Muzzle
+@onready var container: Node3D = $Head/Camera/SubViewportContainer/SubViewport/CameraItem/Container
+@onready var camera_item: Node3D = $Head/Camera/SubViewportContainer/SubViewport/CameraItem
 @onready var melee_hitbox: Area3D = $MeleeHitbox
-@onready var sound_footsteps = $SoundFootsteps
-@onready var blaster_cooldown = $Cooldown
+@onready var sound_footsteps: AudioStreamPlayer = $SoundFootsteps
+@onready var blaster_cooldown: Timer = $Cooldown
 
 @export var crosshair: TextureRect
 
@@ -787,10 +787,10 @@ func _beam_deal_damage() -> void:
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * weapon.max_distance)
 	query.collision_mask = 1  # 默认碰撞层
 	query.exclude = [self]
-	var result := space_state.intersect_ray(query)
+	var result: Dictionary = space_state.intersect_ray(query)
 	if result.is_empty():
 		return
-	var collider := result.get("collider")
+	var collider: Variant = result.get("collider")
 	if collider == null or not is_instance_valid(collider):
 		return
 	if collider.has_method("damage"):
@@ -1101,7 +1101,7 @@ func action_melee() -> void:
 	# 段2 活跃帧(0.2s)：剑下劈（枪保持下沉位）
 	# 段3 后摇(0.2s 并行)：剑滑出屏外 + 枪回升 + scale 1→0
 	# 收尾：剑隐藏 + _melee_active=false + 剑变换复位
-	var tween := get_tree().create_tween()
+	tween = get_tree().create_tween()
 	melee_swing_tween = tween
 
 	# 屏外起点（windup 终点再往右上方推）
@@ -1259,8 +1259,8 @@ func heal(amount: int) -> void:
 
 # issue 05：有效备弹上限 = weapon.max_reserve + bonus_max_reserve（不改 Weapon 资源）
 # 供 issue 04 商店购买上限检查、issue 08 宝箱备弹补给回满使用
-func effective_max_reserve(weapon: Weapon) -> int:
-	return weapon.max_reserve + bonus_max_reserve
+func effective_max_reserve(w: Weapon) -> int:
+	return w.max_reserve + bonus_max_reserve
 
 # Create a random knockback vector
 static func random_vec2(_min: Vector2, _max: Vector2) -> Vector2:

@@ -30,8 +30,11 @@ func _ready() -> void:
 	navigation_mesh.agent_radius = 0.5       # 与怪物碰撞体匹配 + 缓冲
 	navigation_mesh.agent_height = 1.5       # 怪物模型高度
 	navigation_mesh.cell_size = 0.25         # 精度提升（默认 0.3 太粗），路径更贴合墙壁
-	navigation_mesh.agent_max_climb = StepConstants.STEP_HEIGHT  # 统一可通行阈值
+	# agent_max_climb 必须是 cell_size 的整数倍，向上取整确保不低于 STEP_HEIGHT
+	navigation_mesh.agent_max_climb = ceilf(StepConstants.STEP_HEIGHT / navigation_mesh.cell_size) * navigation_mesh.cell_size
 	navigation_mesh.agent_max_slope = 45.0   # 最大斜坡角度
+	# 仅使用碰撞体作为源几何，避免运行时回退解析渲染网格
+	navigation_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	# 同步烘焙（false = 不在后台线程，确保怪物 _ready 前 navmesh 就绪）
 	bake_navigation_mesh(false)
 

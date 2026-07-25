@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://btestchest24expand"]
+[gd_scene format=3 uid="uid://dmj250fbodig8"]
 
 [node name="TestChestExpansion" type="Node"]
 script = ExtResource("1_test_script")

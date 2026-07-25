@@ -341,7 +341,7 @@ func _tick_state(delta: float) -> void:
 func _tick_idle(_delta: float) -> void:
 	_desired_velocity = Vector3.ZERO
 
-func _tick_chase(delta: float) -> void:
+func _tick_chase(_delta: float) -> void:
 	if not player:
 		return
 	# 路径更新（节流）
@@ -357,7 +357,7 @@ func _tick_chase(delta: float) -> void:
 func _tick_attack(_delta: float) -> void:
 	_desired_velocity = Vector3(0, -gravity, 0)
 
-func _tick_retreat(delta: float) -> void:
+func _tick_retreat(_delta: float) -> void:
 	# 远程怪覆盖
 	_desired_velocity = Vector3(0, -gravity, 0)
 

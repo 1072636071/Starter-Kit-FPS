@@ -179,7 +179,7 @@ func _build_weapon_card(slot: int, slot_count: int) -> PanelContainer:
 
 	return panel
 
-func _build_empty_card(content: VBoxContainer, refs: Dictionary) -> void:
+func _build_empty_card(content: VBoxContainer, _refs: Dictionary) -> void:
 	var label := Label.new()
 	label.text = "（空槽）"
 	label.add_theme_font_size_override("font_size", 20)

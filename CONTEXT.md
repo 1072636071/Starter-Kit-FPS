@@ -163,15 +163,21 @@
 | **Wave Budget（波次预算）** | 每波可用的总分数，RunDirector 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。初值 60，每波 ×1.2。纯函数 `wave_budget(wave_number)` 计算。 |
 | **Wave Spawn（波次刷怪）** | 每波怪物在**波开始时一次性全刷**入竞技场；玩家**全灭**该批即视为该波清空、进入 Intermission。无 trickle / 分批刷怪。 |
 | **Intermission（波次间歇）** | 两波之间的短暂停顿状态：**停止刷怪**，下一波由**玩家手动确认**开始（本会话 Q6 定为手动确认）。它本身**不是**消费窗口——金币消费走物理商店摊位（Shop，随时 walk-in），升级卡走 XP 即时暂停；间歇只负责"清场→下一波"的节奏断点。 |
-| **Kill Reward（击杀奖励）** | 怪物死亡时结算的奖励，包含金币（Gold）与经验（XP），并小概率额外掉落血包（Health Pack）。三类资源（金币 / 经验 / 血包）的唯一来源（除每局初始值外）。**分档按怪类型**（初值，可调）：`monster_melee` = 5 金 / 5 XP、`monster_ranged` = 8 金 / 8 XP、`enemy`（飞行）= 10 金 / 10 XP。**血包掉率初值 10%**（可调）。**不随波次缩放**——收益靠每波怪物数量 / 种类递增自然增长，避免通胀。见本会话 Q7。 |
-| **Gold（金币）** | 击杀掉落的货币资源。消费出口为**商店**（购买武器/弹药捆/手雷）。弹药按**弹药类型**（非按枪）购买捆包。参见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
-| **gold_cost_per_bullet（单发金价）** | ~~已废弃~~（ADR 022）。`Weapon` 资源中此字段不再使用，弹药改为按类型在商店购买捆包（如"手枪弹捆 24 发 / 1 金"）。|
-| **weapon_cost（武器售价）** | `Weapon` 资源新增字段（ADR 022）：该枪在商店的购买价格，范围 30–175 金。定价 = 战斗力 + 弹药经济性调节（弹药便宜的枪可略贵，弹药贵的枪适当压价）。 |
-| **ammo_type（弹药类型）** | `Weapon` 资源新增字段（ADR 022）：该枪使用的弹药类型（`&"手枪弹"` / `&"步枪弹"` / `&"霰弹"` / `&"狙击弹"` / `&"能量电池"` / `&"榴弹"`）。|
-| **Shop（商店 / 摊位）** | 竞技场中固定位置的物理摊位。玩家走入时暂停并打开三区购买 UI：**武器区**（随机展示 3 把枪）、**弹药区**（随机 3–4 种弹药捆：手枪弹捆 24 发/1 金、步枪弹捆 20/2 金、霰弹捆 8/3 金、狙击弹捆 4/4 金、能量电池捆 12/3 金、榴弹捆 2/5 金）、**手雷区**（随机 1–2 种：EMP 25 金/破片 20 金）。见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
+| **Kill Reward（击杀奖励）** | 怪物死亡时结算的奖励，包含货币（Copper）与经验（XP），并小概率额外掉落血包（Health Pack）。**分档按怪类型**（2026-07-25 改为铜币，原金币 ×100）：`monster_melee` = 500 铜（5 银）/ 5 XP、`monster_ranged` = 800 铜（8 银）/ 8 XP、`enemy`（飞行）= 1000 铜（10 银=1 金）/ 10 XP。**血包掉率初值 10%**（可调）。**不随波次缩放**。 |
+| **Gold（金币）** | 最高级货币，1 金 = 100 银 = 10000 铜。商店武器以此定价（3–18 金）。参见 ADR 023。 |
+| **Silver（银币）** | 中级货币，1 金 = 100 银，1 银 = 100 铜。商店手雷以此定价（2–3 银）。参见 ADR 023。 |
+| **Copper（铜币）** | 基础货币，单发手枪弹 = 1 铜。商店弹药捆和击杀奖励以此结算，UI 自动进位显示为金银铜混合格式。参见 ADR 023。 |
+| **Backpack（背包）** | 玩家背负的重量制存储空间，无格子上限，仅有重量上限（初始 80，可升级 +10）。存放子弹、枪械、血包。按 T 键打开背包 UI（暂停），拖动物品到备弹槽；关闭 UI 后进入 1.5s 整理动画（可移动不可射击）。三层弹药流：背包（T键补货）→ 身上备弹槽（R键快速换弹）→ 弹匣。参见 ADR 023。 |
+| **Backpack Weight（背包负重）** | 物品重量体系（单位抽象）：手枪弹 0.01/发、步枪弹 0.02/发、霰弹 0.04/发、狙击弹 0.08/发、能量电池 0.03/发、榴弹 0.10/发；枪械整把 3–8；血包 1.5。初始负重上限 80。升级池新增 "+10 背包负重"选项。 |
+| **Ammo Slot（备弹槽）** | 玩家身上 10 个快速取用弹药槽位，可自由分配弹药类型，每槽容量 = 对应武器的一个弹匣量。换弹时从槽中消耗一弹匣填充枪械弹匣。槽位打空后需按 T 键从背包补货。 |
+| **T Key（背包键）** | 新增输入动作 `backpack`，绑定 T 键。按下打开背包 UI（暂停，`PROCESS_MODE_WHEN_PAUSED`），左侧背包物品列表、右侧 10 个备弹槽，拖拽或点击分配。关闭 UI 后 1.5s 整理动画。 |
+| **gold_cost_per_bullet（单发金价）** | ~~已废弃~~（ADR 022）。|
+| **weapon_cost（武器售价）** | `Weapon` 资源字段（ADR 022/023）：金币定价，范围 3–18 金（原 30–175 ÷10）。 |
+| **ammo_type（弹药类型）** | `Weapon` 资源字段（ADR 022）：该枪使用的弹药类型（`&"手枪弹"` / `&"步枪弹"` / `&"霰弹"` / `&"狙击弹"` / `&"能量电池"` / `&"榴弹"`）。|
+| **Shop（商店 / 摊位）** | 竞技场中固定位置的物理摊位。玩家走入时暂停并打开三区购买 UI：**武器区**（随机展示 3 把枪，金定价 3–18）、**弹药区**（随机 3–4 种弹药捆：手枪弹捆 24 发/24 铜、步枪弹捆 20/60 铜、霰弹捆 8/80 铜、狙击弹捆 4/80 铜、能量电池捆 12/60 铜、榴弹捆 2/100 铜）、**手雷区**（随机 1–2 种：EMP 3 银/破片 2 银）。见 ADR 022/023。 |
 | **XP / Experience（经验）** | 击杀掉落的成长资源，累积达阈值后触发**升级（Level Up）**。采用三选一升级卡模型，见 [ADR 011](file:///g:/work/Starter-Kit-FPS/docs/adr/011-level-up-three-choice-cards.md)。 |
 | **Level Up（升级）** | XP 累积跨越阈值时触发的成长事件。触发时机：**XP 跨阈值即时暂停**弹三选一卡（本会话 Q5 定为即时暂停，非延迟到间歇）。**升级阈值随等级递增**：第 1 级需 20 XP，之后每级 ×1.3（20→26→34→44…）。每次升级从**升级池**随机抽取 3 个不重复增益呈现给玩家、**选 1 个**立即生效（本局内永久）。 |
-| **Upgrade Pool（升级池）** | 升级增益的定义集合，每项含 `id` / 描述 / 生效参数（作用于 `health`、`shield`、`damage`、`move_speed`、`reload`、`reserve` 等现有属性）。升级时从中随机抽 3 个不重复项。 |
+| **Upgrade Pool（升级池）** | 升级增益的定义集合，每项含 `id` / 描述 / 生效参数。升级时从中随机抽 3 个不重复项。共 7 项（ADR 023 新增背包负重）：max_health / shield_regen / damage / move_speed / max_reserve / reload_time / backpack_weight。 |
 | **Upgrade Card（升级卡）** | 一次升级中呈现给玩家的单个增益选项（从升级池抽取）。玩家每级选 1 张。 |
 | **Health Pack（血包）** | 怪物死亡**小概率**掉落的 consumable，拾取后恢复**血量（Health）**。是血量（非护盾）的唯一恢复手段——护盾靠自动恢复，不靠血包。 |
 | **Shield（护盾）** | 玩家前的可再生吸收层，**位于血量之前吸收伤害**：一次伤害先扣护盾，溢出部分才扣血量；护盾在"最后一次受击后 `shield_regen_delay` 秒"开始以 `shield_regen_rate` 自动恢复（战斗中亦可回，不只间歇）。初值：`shield_max = 50`、`shield_regen_delay = 3s`、`shield_regen_rate = 10/s`（均可调）。见 [ADR 010](file:///g:/work/Starter-Kit-FPS/docs/adr/010-shield-absorbs-before-health.md)。 |
@@ -206,7 +212,6 @@
 | **Stuck State Machine（卡住状态机）** | 玩家卡住处理的三态状态机：`NORMAL`（正常）→ `STUCK`（卡住等待按 H）→ `ESCAPING`（推回中）→ `NORMAL`。STUCK 期间：禁止移动和跳跃，允许视角转动和射击，正常受伤。ESCAPING 期间：同样禁止移动/跳跃，允许视角/射击/受伤，不可取消。 |
 | **Stuck UI Prompt（卡住提示）** | STUCK 状态时屏幕中下方显示的文字提示："按 H 尝试挣扎离开"。进入 STUCK 时显示，按 H 进入 ESCAPING 或回到 NORMAL 时隐藏。 |
 | **Escape Push（推回）** | ESCAPING 状态下的匀速推出行为。速度 **0.5 m/s**（正常行走的 1/10），方向为卡住前最后有效移动方向的反向（`_last_move_dir`）。终止条件：`test_move` 检测前方无碰撞（脱离夹缝）或推出距离达 8m（安全上限）。推出完毕回到 NORMAL。 |
-| **Stuck UI Prompt（卡住提示）** | STUCK 状态时屏幕中下方显示的文字提示："按 G 尝试挣扎离开"。进入 STUCK 时显示，按 G 进入 ESCAPING 或回到 NORMAL 时隐藏。 |
 | **_last_move_dir（最后移动方向）** | 玩家正常移动时持续缓存的水平速度归一化方向（`Vector3`，y=0）。卡住触发时冻结该值，作为推回方向的依据（取反）。 |
 
 ## 敌人 AI 系统（Enemy AI）
@@ -225,7 +230,7 @@
 | **Flying Enemy AI（飞行敌人 AI）** | `enemy.gd` 重写为追踪型：保持悬停高度（`hover_height = 4.0m`，相对地面），水平方向追踪玩家（速度 `fly_speed = 4.0`），保持 `preferred_distance = 8.0m` 距离环绕 strafing。使用 `lerp` 平滑移动而非瞬移。不再使用 NavMesh（飞行无视地形），纯向量计算。被墙挡时（RayCast 检测）升高越过或绕行。 |
 | **NavMesh Tuning（导航网格调参）** | `nav_region.gd` 烘焙参数优化：`agent_radius = 0.5`（与碰撞体匹配）、`agent_height = 1.5`（怪物模型高度）、`cell_size = 0.25`（精度提升，默认 0.3 太粗）、`agent_max_climb = StepConstants.STEP_HEIGHT`（不变）、`agent_max_slope = 45.0`（默认）。更小的 cell_size 使路径更贴合墙壁，减少"穿墙感"。 |
 | **Staggered Updates（错帧更新）** | 性能优化：多只怪物的路径计算分散到不同物理帧。每只怪在 `_ready()` 中按序号计算 `_update_delay = (index % 6) * 0.05`，路径计时器初始值偏移该量。16 只怪时分 6 帧处理，每帧最多 3 只怪请求路径。 |
-| **Chain Aggro（连锁警觉）** | 两级感知模型：**被动感知**（`awareness_range`，默认 8m；近战 8m、远程 12m）+ **警觉传播**（alert 事件驱动，范围 `chase_range`）。alert 由玩家开枪（30m）、怪物开枪（25m）、怪物死亡（20m）触发，穿墙传播。IDLE 怪物被 alert 惊动后转 CHASE；进入 CHASE 后不因安静退回 IDLE（只走 LOST 路线）。实现见 `AlertSystem` autoload（`emit_alert` / `has_alert_nearby`），alert 缓存存活 0.5s。 |
+| **Chain Aggro（连锁警觉）** | 两级感知模型：**被动感知**（`awareness_range`，默认 16m；近战 16m、远程 24m）+ **警觉传播**（alert 事件驱动，范围 `chase_range`）。alert 由玩家开枪（60m）、怪物开枪（50m）、怪物死亡（40m）触发，穿墙传播。（2026-07-25 全局翻倍，原值：awareness 8/12m，alert 30/25/20m。）IDLE 怪物被 alert 惊动后转 CHASE；进入 CHASE 后不因安静退回 IDLE（只走 LOST 路线）。实现见 `AlertSystem` autoload（`emit_alert` / `has_alert_nearby`），alert 缓存存活 0.5s。 |
 
 ## 敌人跳跃导航系统（Enemy Jump Navigation）
 
@@ -319,8 +324,9 @@
 | 功能 | 键 | 动作名 |
 |------|------|------|
 | 挣扎 | **H** | `struggle`（ADR 022 从 G 改） |
-| 手雷投掷 | **G** | `throw_grenade`（新增） |
-| 丢枪 | **X** | `drop_weapon`（新增） |
+| 手雷投掷 | **G** | `throw_grenade` |
+| 丢枪 | **X** | `drop_weapon` |
+| 背包 | **T** | `backpack`（ADR 023 新增） |
 
 ## 手雷系统（Grenade System）
 

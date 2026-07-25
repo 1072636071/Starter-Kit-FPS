@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://btestbalance27wave"]
+[gd_scene format=3 uid="uid://cfqjx8oyxkipa"]
 
 [node name="TestBalanceWaveSurvival" type="Node"]
 script = ExtResource("1_test_script")
