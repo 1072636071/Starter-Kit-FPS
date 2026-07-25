@@ -101,6 +101,10 @@
 | **Melee Cooldown Implementation（近战冷却实现）** | 冷却用**浮点累加器**（`melee_cooldown_remaining: float`，在 `_process(delta)` 中递减），**不**新增 Timer 节点。与现有 `_step_reload(delta)` 的 `reload_time_remaining` 同模式。触发挥砍时设 `melee_cooldown_remaining = melee_cooldown`，每帧 `-= delta`，归零方可再次挥砍。避免向 `player.tscn` 添加 Timer 节点，与 `blaster_cooldown` Timer（射击冷却用）解耦。 |
 | **Melee Slash VFX（近战剑弧特效）** | 近战攻击活跃帧期间的**剑弧拖尾粒子特效**（GPUParticles3D 一次性爆发），直观展示攻击范围。参见 [ADR 020](file:///g:/work/Starter-Kit-FPS/docs/adr/020-melee-slash-vfx.md)。玩家：青白色、挂在 `CameraItem` 下（layer 2，仅第一人称可见）；敌人：红橙色、挂在怪物自身节点下（layer 3，主相机可见）。30 粒子、0.2s 生命周期、additive 发光。由 `MeleeVFX` 静态类（[scripts/melee_vfx.gd](file:///g:/work/Starter-Kit-FPS/scripts/melee_vfx.gd)）统一管理创建与触发。 |
 | **MeleeVFX（近战特效工具类）** | 静态工具类 `MeleeVFX`（[scripts/melee_vfx.gd](file:///g:/work/Starter-Kit-FPS/scripts/melee_vfx.gd)），提供 `create_slash(parent, color, layer, box_extents, local_pos) -> GPUParticles3D` 和 `trigger(particles)` 两个静态方法。统一玩家和敌人的剑弧粒子创建与触发逻辑，避免重复配置代码。 |
+| **Swing Easing（挥砍缓动曲线）** | 挥砍 Tween 三段各自独立的缓动配置，取代默认线性插值。前摇：`TRANS_SINE + EASE_IN`（缓慢蓄力，模拟举剑重量感）；活跃帧：`TRANS_QUART + EASE_OUT`（快速劈下末尾减速，利落打击感）；后摇：`TRANS_QUAD + EASE_IN`（收刀逐渐加速离场）。线性插值是游戏手感的敌人——缺乏缓动的匀速运动看起来像机器人。 |
+| **Hit-Stop（命中顿帧）** | 近战命中敌人瞬间，`Engine.time_scale` 短暂降至 0.05（约 3 帧的停顿），模拟"砍中实体"的阻滞感。使用 `ignore_time_scale` 计时器在真实时间 ~0.06s 后恢复到 1.0。仅命中时触发，挥空不触发。是动作游戏打击感最核心的单因子之一，给大脑处理反馈的窗口。 |
+| **Melee Hit Shake（近战命中震屏）** | 近战命中时相机短暂随机抖动（峰值 0.04 单位，帧率无关 lerp 衰减，decay 系数 25），叠加在落地回弹之上。沿 x/y 轴随机偏移，模拟冲击力传导到视角。 |
+| **Melee FOV Pulse（近战 FOV 扩张）** | 挥砍期间（`_melee_active`）FOV 目标值从默认 75° 扩张到 80°（+5°），通过 `move_toward` 平滑过渡，挥砍结束后自动缩回。模拟"发力瞬间视野变窄/加速"的生理感受，增加动作速度感。 |
 
 ## 怪物武器与动画（Monster Weapons & Animation）
 
@@ -149,15 +153,17 @@
 |------|------|
 | **Arena Run（竞技场一局）** | 玩家在单个固定竞技场中的一次完整游戏会话。以玩家死亡（或主动退出）结束；结束后重置全部本局状态（金币、经验、护盾、弹药等）。一局内怪物按波次刷出。 |
 | **Wave（波次）** | 成组刷出的怪物批次。玩家**清空（全灭）**该批后该波结束、进入间歇。波次编号递增，整体难度随编号上升（Escalation）。 |
-| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**分数预算**第 N 波 = `30 × 1.5^(N-1)`（前波 1.5 倍）；**类型分阶段解锁**——1–3 波纯 `monster_melee`，第 4 波起混 `monster_ranged`，第 7 波起混 `enemy`（飞行）。参见 [ADR 018](file:///g:/work/Starter-Kit-FPS/docs/adr/018-score-based-wave-composition.md)。 |
-| **Monster Cost（怪物分数/成本）** | 每种怪物类型的刷出代价，决定在波次预算中占多少配额。与击杀奖励值一致：`monster_melee`=5、`monster_ranged`=8、`enemy`=10。越强 = 越贵 = 杀它掉越多。 |
-| **Wave Budget（波次预算）** | 每波可用的总分数，RunDirector 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。初值 30，每波 ×1.5。纯函数 `wave_budget(wave_number)` 计算。 |
+| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**分数预算**第 N 波 = `60 × 1.2^(N-1)`（前波 1.2 倍）；**类型分阶段解锁**——1–3 波：普通女/普通黑女/游戏宅；4–6 波：+警察/律师/日本艺妓/研究员-老人；7–9 波：+牛仔/独眼牛仔/猎人/化学人；10–12 波：+健壮男/机器人-男电/机器人-女心；13+ 波：+驯兽师/忍者。参见 [ADR 018](file:///g:/work/Starter-Kit-FPS/docs/adr/018-score-based-wave-composition.md) 与 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
+| **Monster Cost（怪物分数/成本）** | 每种怪物类型的刷出代价，决定在波次预算中占多少配额。与击杀奖励值一致。由 `ENEMY_CONFIG` 字典数据驱动：普通女/普通黑女=5、警察=6、游戏宅=8、律师/日本艺妓=10、研究员-老人/牛仔=12、独眼牛仔/猎人=14、化学人=15、健壮男=16、机器人-男电=18、机器人-女心=20、驯兽师=22、忍者=25。参见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
+| **Wave Budget（波次预算）** | 每波可用的总分数，RunDirector 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。初值 60，每波 ×1.2。纯函数 `wave_budget(wave_number)` 计算。 |
 | **Wave Spawn（波次刷怪）** | 每波怪物在**波开始时一次性全刷**入竞技场；玩家**全灭**该批即视为该波清空、进入 Intermission。无 trickle / 分批刷怪。 |
 | **Intermission（波次间歇）** | 两波之间的短暂停顿状态：**停止刷怪**，下一波由**玩家手动确认**开始（本会话 Q6 定为手动确认）。它本身**不是**消费窗口——金币消费走物理商店摊位（Shop，随时 walk-in），升级卡走 XP 即时暂停；间歇只负责"清场→下一波"的节奏断点。 |
 | **Kill Reward（击杀奖励）** | 怪物死亡时结算的奖励，包含金币（Gold）与经验（XP），并小概率额外掉落血包（Health Pack）。三类资源（金币 / 经验 / 血包）的唯一来源（除每局初始值外）。**分档按怪类型**（初值，可调）：`monster_melee` = 5 金 / 5 XP、`monster_ranged` = 8 金 / 8 XP、`enemy`（飞行）= 10 金 / 10 XP。**血包掉率初值 10%**（可调）。**不随波次缩放**——收益靠每波怪物数量 / 种类递增自然增长，避免通胀。见本会话 Q7。 |
-| **Gold（金币）** | 击杀掉落的货币资源，在 Intermission 的**商店**按"发"购买各枪 `reserve` 备弹。映射见 [ADR 012](file:///g:/work/Starter-Kit-FPS/docs/adr/012-gold-buys-reserve-per-bullet.md)。金币只有这一个消费出口（升级由 XP 驱动，不花金币）。 |
-| **gold_cost_per_bullet（单发金价）** | `Weapon` 资源新增属性：玩家在商店花金币买该枪 `reserve` 时每发的金价。初值 `blaster = 1`、`blaster_repeater = 2`（强枪更贵）。购买受该枪 `max_reserve` 封顶。 |
-| **Shop（商店 / 子弹摊位）** | 竞技场中**一个固定位置的物理摊位（Station）**，不是菜单。玩家**走入**其触发区时**游戏暂停**并打开购买 UI（按 `gold_cost_per_bullet` 加 `reserve`），离开恢复。金币消费**不限于间歇**，可随时（含波次中）走入购买。与升级卡（XP 即时暂停）是两套独立暂停点。见 [ADR 013](file:///g:/work/Starter-Kit-FPS/docs/adr/013-shop-as-physical-station.md)。 |
+| **Gold（金币）** | 击杀掉落的货币资源。消费出口为**商店**（购买武器/弹药捆/手雷）。弹药按**弹药类型**（非按枪）购买捆包。参见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
+| **gold_cost_per_bullet（单发金价）** | ~~已废弃~~（ADR 022）。`Weapon` 资源中此字段不再使用，弹药改为按类型在商店购买捆包（如"手枪弹捆 24 发 / 1 金"）。|
+| **weapon_cost（武器售价）** | `Weapon` 资源新增字段（ADR 022）：该枪在商店的购买价格，范围 30–175 金。定价 = 战斗力 + 弹药经济性调节（弹药便宜的枪可略贵，弹药贵的枪适当压价）。 |
+| **ammo_type（弹药类型）** | `Weapon` 资源新增字段（ADR 022）：该枪使用的弹药类型（`&"手枪弹"` / `&"步枪弹"` / `&"霰弹"` / `&"狙击弹"` / `&"能量电池"` / `&"榴弹"`）。|
+| **Shop（商店 / 摊位）** | 竞技场中固定位置的物理摊位。玩家走入时暂停并打开三区购买 UI：**武器区**（随机展示 3 把枪）、**弹药区**（随机 3–4 种弹药捆：手枪弹捆 24 发/1 金、步枪弹捆 20/2 金、霰弹捆 8/3 金、狙击弹捆 4/4 金、能量电池捆 12/3 金、榴弹捆 2/5 金）、**手雷区**（随机 1–2 种：EMP 25 金/破片 20 金）。见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
 | **XP / Experience（经验）** | 击杀掉落的成长资源，累积达阈值后触发**升级（Level Up）**。采用三选一升级卡模型，见 [ADR 011](file:///g:/work/Starter-Kit-FPS/docs/adr/011-level-up-three-choice-cards.md)。 |
 | **Level Up（升级）** | XP 累积跨越阈值时触发的成长事件。触发时机：**XP 跨阈值即时暂停**弹三选一卡（本会话 Q5 定为即时暂停，非延迟到间歇）。**升级阈值随等级递增**：第 1 级需 20 XP，之后每级 ×1.3（20→26→34→44…）。每次升级从**升级池**随机抽取 3 个不重复增益呈现给玩家、**选 1 个**立即生效（本局内永久）。 |
 | **Upgrade Pool（升级池）** | 升级增益的定义集合，每项含 `id` / 描述 / 生效参数（作用于 `health`、`shield`、`damage`、`move_speed`、`reload`、`reserve` 等现有属性）。升级时从中随机抽 3 个不重复项。 |
@@ -180,7 +186,7 @@
 | **Player Upgrade Bonus Fields（玩家升级 bonus 字段）** | 升级修改的是 **Player 实例的运行时 bonus 字段**，**不修改 `Weapon` 资源**（`.tres` 全局共享引用，直接改会跨局污染且可能写盘）。字段：`max_health` / `bonus_max_reserve`（有效备弹上限 = `weapon.max_reserve + bonus_max_reserve`）/ `damage_multiplier`（实际伤害 = `weapon.damage × damage_multiplier`）/ `reload_time_multiplier` / `move_speed_bonus` / `shield_regen_rate_bonus`。随场景重置自然清零（配合 `reload_current_scene()` 重开机制，无需手动 reset）。 |
 | **RNG（可注入种子随机数）** | RunDirector 持有 `@export var rng_seed: int = 0`（0 = 随机）+ `var rng: RandomNumberGenerator`，`_ready()` 初始化。供血包掉率（issue 03）、升级抽卡（issue 05）、宝箱抽卡（issue 08）等概率逻辑使用，测试时可注入固定种子断言分布。 |
 | **Chest（清场宝箱）** | 借鉴《元气骑士》清房间掉宝箱：每波 `wave_cleared` 后 RunDirector 在竞技场中央生成 1 个宝箱（`scenes/chest.tscn` Area3D + `scripts/chest.gd`）。玩家走近按 `interact`（E 键）开启 → 暂停 → 弹 3 选 1 奖励（Chest UI `PROCESS_MODE_WHEN_PAUSED`）。**不自动开**（玩家必须按 E）。同一时间场上最多 1 个宝箱（避免堆积）。开箱后宝箱 `queue_free()`。宝箱是清场大奖励，与 issue 03 击杀小概率血包互补。 |
-| **Chest Reward（宝箱奖励）** | 宝箱开启后从奖励池抽 3 个不重复项呈现，玩家选 1 即时生效（无永久 buff，区别于升级卡）。奖励池初版 4 项（`@export` 可调）：**金币大礼包**（`20 + 5×wave`，按波次缩放——击杀奖励不缩放但宝箱是大奖励可缩放）、**血包 ×3**（一次性 `player.heal(75)`，受 `max_health` 上限）、**经验大礼包**（`15 + 3×wave`，可能触发 issue 05 升级流程内部级联）、**备弹补给**（玩家所有武器 `reserve` 回满到 `weapon.max_reserve + player.bonus_max_reserve`）。"3 个不重复"指本次三张互不相同，不跨波记忆。奖励池只含即时结算项，不引入临时 buff 系统（避免 scope 蔓延）。 |
+| **Chest Reward（宝箱奖励）** | 宝箱开启后从奖励池抽 3 个不重复项呈现，玩家选 1 即时生效。奖励池 6 项（ADR 022 从 4 项扩展）：**金币大礼包**、**血包 ×3**、**经验大礼包**、**备弹补给**（回满所有弹种 `ammo_reserve`）、**随机武器**（按稀有度加权抽 1 把）、**手雷补给**（EMP +1、破片 +1）。 |
 | **start_wave / interact（输入动作）** | RunDirector 新增 `start_wave` 输入动作（建议绑定 Enter 或 F 键）用于手动开下一波；宝箱交互复用现有 `interact` 输入动作（E 键）。两键分离避免冲突——开下一波与开宝箱是两个独立动作，玩家可不开宝箱直接开下一波。 |
 | **RunDirector Public Methods（RunDirector public 方法）** | RunDirector 暴露给 issue 04（商店）/ 08（宝箱）/ 03（击杀奖励）调用的 public 方法：`add_gold(amount)`（加金币 + 累计 + 发信号）、`spend_gold(cost) -> bool`（扣金币，不足返回 false）、`add_xp(amount)`（加经验，跨阈值内部级联触发 issue 05 升级）、`add_kills(count=1)`（加击杀计数）。这些方法是金币/经验/击杀状态变更的唯一入口，避免 issue 直接改字段漏发信号。 |
 
@@ -191,8 +197,9 @@
 | 术语 | 定义 |
 |------|------|
 | **Stuck（卡住）** | 玩家因跳入建筑缝隙等狭窄空间，水平移动被两侧碰撞完全阻挡的状态。判定条件：在地面（`is_on_floor()`）+ 有 WASD 输入（`input.length() > 0.1`）+ 实际水平速度 < 0.3 m/s + 持续 0.5 秒。触发后进入 STUCK 状态。 |
-| **Struggle（挣扎）** | 玩家在 STUCK 状态下按 G 键触发的逃脱动作。按 G 后进入 ESCAPING 状态，沿进入方向反向匀速推出。输入动作名 `struggle`，绑定 G 键。 |
-| **Stuck State Machine（卡住状态机）** | 玩家卡住处理的三态状态机：`NORMAL`（正常）→ `STUCK`（卡住等待按 G）→ `ESCAPING`（推回中）→ `NORMAL`。STUCK 期间：禁止移动和跳跃，允许视角转动和射击，正常受伤。ESCAPING 期间：同样禁止移动/跳跃，允许视角/射击/受伤，不可取消。 |
+| **Struggle（挣扎）** | 玩家在 STUCK 状态下按 H 键触发的逃脱动作（ADR 022：原 G 键让给手雷投掷）。按 H 后进入 ESCAPING 状态，沿进入方向反向匀速推出。输入动作名 `struggle`，绑定 H 键。 |
+| **Stuck State Machine（卡住状态机）** | 玩家卡住处理的三态状态机：`NORMAL`（正常）→ `STUCK`（卡住等待按 H）→ `ESCAPING`（推回中）→ `NORMAL`。STUCK 期间：禁止移动和跳跃，允许视角转动和射击，正常受伤。ESCAPING 期间：同样禁止移动/跳跃，允许视角/射击/受伤，不可取消。 |
+| **Stuck UI Prompt（卡住提示）** | STUCK 状态时屏幕中下方显示的文字提示："按 H 尝试挣扎离开"。进入 STUCK 时显示，按 H 进入 ESCAPING 或回到 NORMAL 时隐藏。 |
 | **Escape Push（推回）** | ESCAPING 状态下的匀速推出行为。速度 **0.5 m/s**（正常行走的 1/10），方向为卡住前最后有效移动方向的反向（`_last_move_dir`）。终止条件：`test_move` 检测前方无碰撞（脱离夹缝）或推出距离达 8m（安全上限）。推出完毕回到 NORMAL。 |
 | **Stuck UI Prompt（卡住提示）** | STUCK 状态时屏幕中下方显示的文字提示："按 G 尝试挣扎离开"。进入 STUCK 时显示，按 G 进入 ESCAPING 或回到 NORMAL 时隐藏。 |
 | **_last_move_dir（最后移动方向）** | 玩家正常移动时持续缓存的水平速度归一化方向（`Vector3`，y=0）。卡住触发时冻结该值，作为推回方向的依据（取反）。 |
@@ -214,6 +221,109 @@
 | **NavMesh Tuning（导航网格调参）** | `nav_region.gd` 烘焙参数优化：`agent_radius = 0.5`（与碰撞体匹配）、`agent_height = 1.5`（怪物模型高度）、`cell_size = 0.25`（精度提升，默认 0.3 太粗）、`agent_max_climb = StepConstants.STEP_HEIGHT`（不变）、`agent_max_slope = 45.0`（默认）。更小的 cell_size 使路径更贴合墙壁，减少"穿墙感"。 |
 | **Staggered Updates（错帧更新）** | 性能优化：多只怪物的路径计算分散到不同物理帧。每只怪在 `_ready()` 中按序号计算 `_update_delay = (index % 6) * 0.05`，路径计时器初始值偏移该量。16 只怪时分 6 帧处理，每帧最多 3 只怪请求路径。 |
 | **Chain Aggro（连锁警觉）** | 两级感知模型：**被动感知**（`awareness_range`，默认 8m；近战 8m、远程 12m）+ **警觉传播**（alert 事件驱动，范围 `chase_range`）。alert 由玩家开枪（30m）、怪物开枪（25m）、怪物死亡（20m）触发，穿墙传播。IDLE 怪物被 alert 惊动后转 CHASE；进入 CHASE 后不因安静退回 IDLE（只走 LOST 路线）。实现见 `AlertSystem` autoload（`emit_alert` / `has_alert_nearby`），alert 缓存存活 0.5s。 |
+
+## 敌人跳跃导航系统（Enemy Jump Navigation）
+
+参见 [ADR 021](file:///g:/work/Starter-Kit-FPS/docs/adr/021-enemy-jump-navigation.md)。
+
+| 术语 | 定义 |
+|------|------|
+| **Jump Link（跳跃链接）** | 连接 NavMesh 两个断开区域（地面→建筑顶）的 `NavigationLink3D` 节点。由 `NavJumpLinks` 工具类在 NavMesh 烘焙后自动生成。敌人通过 `NavigationAgent3D.link_reached` 信号感知到达链接起点，触发跳跃穿越。 |
+| **NavJumpLinks（跳跃链接生成器）** | 静态工具类 `scripts/nav_jump_links.gd`，提供 `generate(gridmap, nav_region, jump_heights)` 方法。主策略：遍历 GridMap 找建筑顶部边缘 → 在相邻空地放置 `NavigationLink3D`；兜底策略：分析 NavMesh 找垂直相邻的断开区域。 |
+| **JUMP State（跳跃状态）** | FSM 新增状态。仅从 CHASE 通过 `link_reached` 信号进入。行为：沿链接方向施加水平速度 + 垂直 `jump_velocity` 升空 → 落地检测 → 切回 CHASE。跳跃中不可攻击。 |
+| **jump_height（跳跃高度）** | 怪物类型属性，定义该类型能跳上的最大垂直落差。`monster_melee` = 5m（能上一层楼+余量），`monster_ranged` = 2m（仅能上矮平台）。决定 `NavJumpLinks` 为该类型生成哪些链接。 |
+| **jump_velocity（跳跃初速度）** | 跳跃时施加的垂直速度，由 `jump_height` 反推：`jump_velocity = sqrt(2 × gravity × jump_height)`，其中 `gravity = 20.0`。与玩家 `jump_strength` 同模式。 |
+
+## 角色化敌人系统（Character-Based Enemies）
+
+参见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。
+
+| 术语 | 定义 |
+|------|------|
+| **角色化敌人** | 从 Kenney `blocky-characters_20` 系列导入的 16 个具名角色敌人（排除丧尸/狂暴丧尸）。每个角色定位唯一，按近战/远程分组，各有独立 `@export` 参数（血量/移速/伤害/冷却/跳跃高度）。模型 GLB 与现有怪物同骨架/动画（`attack-melee-right`、`holding-right-shoot`、`walk/run/idle/die` 等），复用 `monster_base.gd`。 |
+| **ENEMY_CONFIG（敌人配置字典）** | `run_director.gd` 中的 16 条目数据驱动字典，每项含 `cost`（波次预算消耗）/ `reward`（击杀金币与经验）/ `min_wave`（最早出现波次）/ `scene`（`.tscn` 路径）。替代旧 `MONSTER_COST` / `_available_types` / `_reward_for` 硬编码。 |
+| **锚点敌人（Anchor Enemies）** | 第一批实现的 3 个敌人：忍者、驯兽师、化学人。目的是验证模块系统架构（Stealth/Dash/SummonPet/PlaceTrap 四类模块），之后 13 个敌人以它们为模板独立工单推进。 |
+| **Cube-Pet（方块宠物）** | 驯兽师 SummonPet 模块召唤的跟班，来自 `kenney_cube-pets_1.0` 素材。不是独立敌种，不参与 RunDirector 波次/奖励体系。简单 AI：追玩家 → 近身咬（伤害 5）→ 死亡 `queue_free()`。驯兽师死亡时所有其召唤的 pets 同时销毁。 |
+
+### 敌人花名册（16 角色）
+
+| 角色 | 定位 | 模块 | 成本 | 首次波次 |
+|------|------|------|------|---------|
+| 普通女 | 基础近战 | 无 | 5 | 1 |
+| 普通黑女 | 基础远程 | 无 | 5 | 1 |
+| 游戏宅 | 近战骚扰 | DebuffAura | 8 | 1 |
+| 警察 | 远程警觉 | 无（参数型） | 6 | 4 |
+| 律师 | 远程控制 | DebuffOnHit | 10 | 4 |
+| 日本艺妓 | 远程光环 | SpeedAura (10m/+20%) | 10 | 4 |
+| 研究员-老人 | 远程支援 | HealAura | 12 | 4 |
+| 牛仔 | 远程快枪 | MultiShot | 12 | 7 |
+| 独眼牛仔 | 远程狙击 | ChargedShot | 14 | 7 |
+| 猎人 | 远程陷阱 | PlaceTrap:Damage | 14 | 7 |
+| 化学人 | 远程陷阱 | PlaceTrap:Poison | 15 | 7 |
+| 健壮男 | 近战坦克 | BerserkOnDamage | 16 | 10 |
+| 机器人-男电 | 近战护盾 | Shield + EMPBurst | 18 | 10 |
+| 机器人-女心 | 近战自爆 | SelfDestruct + ExplodeOnDeath | 20 | 10 |
+| 驯兽师 | 远程召唤 | SummonPet | 22 | 13 |
+| 忍者 | 近战刺客 | Stealth + Dash | 25 | 13 |
+
+## 敌人模块系统（Enemy Module System）
+
+| 术语 | 定义 |
+|------|------|
+| **EnemyModule（敌人模块）** | 可插拔的特殊机制节点，挂为敌人 `.tscn` 的子节点。实现 `module_setup(enemy)` + 四个生命周期钩子（`on_enter_state` / `on_tick` / `on_damage` / `on_death`）。基类 `_run_module_hook(method, args)` 遍历 `_modules` 数组调用。新敌人 = GLB 模型 + 挂 1–3 个模块，不写新子类。 |
+| **模块钩子（Module Hooks）** | `monster_base.gd` 在 FSM 生命周期各时机遍历模块调用：(1) `on_enter_state(state)` — 状态转换时；(2) `on_tick(delta)` — `_tick_state` 末尾每帧；(3) `on_damage(amount)` — `damage()` 减血前；(4) `on_death()` — `destroy()` 中 `_dead=true` 后、`died` 信号前。 |
+| **模块清单（12 个）** | Stealth（隐身）、Dash（瞬步）、SummonPet（召唤）、PlaceTrap（放置陷阱，Poison/Damage 变体）、BerserkOnDamage（受击狂暴）、Shield（护盾）、EMPBurst（护盾破碎 EMP）、SelfDestruct（主动自爆）、ExplodeOnDeath（死亡自爆）、DebuffAura（减速光环）、MultiShot（快枪齐射）、ChargedShot（蓄力狙击）、HealAura（治疗光环）、SpeedAura（加速光环）、DebuffOnHit（命中减伤）。 |
+| **模块冲突策略** | 模块设计为不互斥：若两个模块修改同一属性（如移速），按 `_modules` 数组顺序后覆盖前。需要互斥的场景由单个模块内部防御（如 Shield 在 `on_damage` 中将 amount 置零，后续模块收 amount=0）。 |
+
+## 弹药类型系统（Ammo Type System）
+
+| 术语 | 定义 |
+|------|------|
+| **ammo_reserve（弹药池）** | `Player` 的弹药储备，从各枪独立 `Array[int]` 重构为 `Dictionary[StringName, int]`（ADR 022）。按 6 个弹种键值存储：`手枪弹` / `步枪弹` / `霰弹` / `狙击弹` / `能量电池` / `榴弹`。同一弹种的枪共享备弹池。初始仅 `手枪弹`=36，其余为 0。 |
+| **弹药捆（Ammo Bundle）** | 商店售卖的弹药单位。6 种弹药各有固定捆量：手枪弹捆 24 发/12 金、步枪弹捆 20/16、霰弹捆 8/16、狙击弹捆 4/16、能量电池捆 12/20、榴弹捆 2/20。每次进店随机展示 3–4 种不重复捆。 |
+| **Weapon Slot（武器槽）** | 玩家最多携带 3 把枪（`weapons` 数组最大长度 3）。初始配装：手托手枪-小口径 + 2 空槽。**允许持有重复武器**（3 槽可全装同一把枪）。替换武器时弹药保留（弹药池按弹种维度，不因持枪变化丢失）。 |
+| **Weapon Inspect（武器检视）** | 按 **TAB 键**打开的全屏武器属性面板。三张卡片并排展示 3 个武器槽的完整属性：伤害/DPS/射速/精度条/弹匣/备弹/换弹/弹药类型/耐久条/售价/定位/可靠性★。当前装备武器高亮金边。**对比功能：点击一张卡片固定为"参考"**（蓝边），其余卡片自动显示相对差异——绿色 ▲ 表示更优、红色 ▼ 表示更差。再次点击已固定的卡片取消对比。ESC 关闭。弹药状态实时刷新（开火时同步更新弹匣/备弹数字）。被商店/升级等暂停 UI 打断时自动关闭。实现：`scripts/weapon_inspect_ui.gd` + `scenes/weapon_inspect_ui.tscn`，由 HUD（`scripts/hud.gd`）托管并处理 TAB 输入。 |
+
+## 武器扩展（Weapon Expansion）
+
+| 术语 | 定义 |
+|------|------|
+| **武器库（20 把）** | 从 `kenney_blaster-kit_2.1` 导入的 18 把新枪 + 保留 2 把旧枪（blaster/blaster-repeater）。按 6 种弹药分类：手枪弹 4 把、步枪弹 3 把、霰弹 4 把、狙击弹 2 把、能量电池 6 把、榴弹 1 把。全部参数见 ADR 022 武器参数表。 |
+| **weapon_cost（武器售价）** | `Weapon` 资源新增字段，范围 30（手托手枪）–175（榴弹发射器）金。商店武器区按此价格出售，宝箱随机武器按稀有度加权抽样（低档 60%/中档 25%/高档 15%）。 |
+| **持续射线枪** | 能量电池弹种的特殊行为武器：开火时持续发射光束（非离散弹体），每 tick 消耗弹药并造成持续伤害。需要新武器行为模式（`weapon_mode = "beam"`），在 P4 工单（issue 15）实现。 |
+| **短柄榴弹发射器** | 榴弹弹种的爆炸武器：发射弹体命中后 AOE 爆炸（`explosion_radius` / `explosion_damage`）。扩展现有弹体系统的爆炸行为，在 P4 工单实现。 |
+
+## 耐久度系统（Weapon Durability）
+
+| 术语 | 定义 |
+|------|------|
+| **durability_max（最大耐久）** | `Weapon` 资源新增字段（ADR 022），定义该枪从全新到损坏的总射击次数（扣扳机计，非弹丸数）。范围 25–280，见 ADR 022 武器参数表。设计原则：高射速枪需要更多总耐久（机枪 280 发但只能连续开火 22s），爆发型武器收紧（重型狙击仅 35 发——每发都珍贵）。
+| **Durability（当前耐久）** | 每扣一次扳机减 1。归零后武器**爆掉**：播放粒子特效 → 自动从武器槽移除 → 槽位腾空 → 自动切下一把枪（或空手）。不可修复（v1）。鼓励玩家持多把枪轮换。 |
+| **Durability Display（耐久显示）** | HUD 每把武器图标下方显示耐久进度条（百分比或细条），低耐久（≤20%）时变红警告。 |
+
+## 武器丢弃与拾取
+
+| 术语 | 定义 |
+|------|------|
+| **drop_weapon（丢枪）** | 新增输入动作，默认 **X 键**。丢弃当前手持武器，在脚下生成可拾取的地面物体（小武器模型旋转 + 发光 + `Area3D`）。丢弃后自动切到下一把枪（若还有）。 |
+| **Weapon Pickup（武器拾取）** | 地面武器物体为 Area3D，玩家走过时若有**空槽**（<3 把）则自动装填；3 槽全满不触发。拾取时保留该武器当前耐久度（不是重置满——公平性）。商店/宝箱获得的武器均满耐久。**允许持有重复武器**（如 3 槽全装同一把枪），无排重限制。 |
+| **Weapon Break（武器爆掉）** | 耐久归零时触发：播放火花/碎片粒子特效 → 从 `weapons` + `weapon_durability` 数组移除 → 槽位自动腾空 → 自动切下一把。无需手动丢弃。 |
+
+## 键位汇总
+
+| 功能 | 键 | 动作名 |
+|------|------|------|
+| 挣扎 | **H** | `struggle`（ADR 022 从 G 改） |
+| 手雷投掷 | **G** | `throw_grenade`（新增） |
+| 丢枪 | **X** | `drop_weapon`（新增） |
+
+## 手雷系统（Grenade System）
+
+| 术语 | 定义 |
+|------|------|
+| **Grenade Slot（手雷槽）** | 独立于武器 3 槽的投掷物槽。`grenades: Dictionary[StringName, int]`，最多携带 5 颗（含 EMP 与破片合计）。初始 EMP=1、破片=0。操作：G 键 `throw_grenade` 蓄力瞄准 → 释放投掷。 |
+| **EMP 控制手雷** | 由烟雾手雷 GLB 改制。落地 0.5s 后引爆，半径 6m，范围内敌人移速×0.3 + 禁用 ATTACK 状态，持续 3s。商店 25 金/颗。 |
+| **破片手雷** | 由破片手雷 GLB 改制。落地 0.8s 后引爆，半径 5m，伤害 40（AOE）。商店 20 金/颗。 |
 
 ## 场景文件约定（Scene File Conventions）
 

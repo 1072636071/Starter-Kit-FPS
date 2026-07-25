@@ -137,13 +137,13 @@ func _run_tests() -> void:
 	rd.set("rng_seed", 42)  # 可复现
 	add_child(rd)
 
-	# 手动开波（wave 1 = 6 只 melee，分数制预算 30）
+	# 手动开波（wave 1 = 12 只 melee，分数制预算 60）
 	_counters["wave_cleared"] = 0
 	rd.wave_cleared.connect(func(_w: int, _t: bool):
 		_counters["wave_cleared"] += 1
 	)
 	rd.start_next_wave()
-	_check(rd.alive_count == 6, "wave 1 alive_count == 6 (got %d)" % rd.alive_count)
+	_check(rd.alive_count == 12, "wave 1 alive_count == 12 (got %d)" % rd.alive_count)
 
 	# 直接杀死所有怪物（damage 比坠落检测更可靠，避免 CharacterBody3D 位置同步问题）
 	for m in monsters_parent.get_children():
@@ -153,8 +153,8 @@ func _run_tests() -> void:
 
 	_check(rd.alive_count == 0, "all fell → alive_count == 0 (got %d)" % rd.alive_count)
 	_check(int(_counters["wave_cleared"]) == 1, "wave_cleared emitted once (got %d)" % int(_counters["wave_cleared"]))
-	_check(rd.kills == 6, "kills == 6 after fall (got %d)" % rd.kills)
-	_check(rd.gold == 30, "gold == 30 (6×5 melee reward) (got %d)" % rd.gold)
+	_check(rd.kills == 12, "kills == 12 after fall (got %d)" % rd.kills)
+	_check(rd.gold == 60, "gold == 60 (12×5 melee reward) (got %d)" % rd.gold)
 
 	# 等一帧让延迟 queue_free / 计时器不至于在 quit 前抛错
 	await get_tree().process_frame

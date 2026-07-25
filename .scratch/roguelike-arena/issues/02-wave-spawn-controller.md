@@ -11,7 +11,7 @@ Refs: PRD.md, ADR 009, ADR 015, CONTEXT.md「Wave / Escalation / Wave Spawn / In
 ## 验收标准
 
 ### 波次数量与类型（已由 ADR 018 改为分数预算制）
-- 第 N 波怪物由**分数预算**决定：`wave_budget(N) = 30 × 1.5^(N-1)`。
+- 第 N 波怪物由**分数预算**决定：`wave_budget(N) = 60 × 1.2^(N-1)`。
 - 每种怪物有刷出成本：`monster_melee`=5, `monster_ranged`=8, `enemy`=10。
 - 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。
 - 怪物类型分阶段解锁（保留）：

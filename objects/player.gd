@@ -133,6 +133,9 @@ var is_aiming := false
 
 var tween: Tween
 
+# 近战命中震屏衰减值（每帧 lerp 到 0，命中时置为峰值）
+var _melee_hit_shake := 0.0
+
 signal health_updated
 # 护盾变化信号（参数：当前 shield / shield_max），供 HUD 绘制护盾条（issue 07）
 signal shield_updated(shield: float, shield_max: float)
@@ -284,14 +287,22 @@ func _process(delta):
 		if abs(velocity.x) > 1 or abs(velocity.z) > 1:
 			sound_footsteps.stream_paused = false
 
-	# ADS FOV 过渡
+	# ADS FOV 过渡（挥砍期间轻微扩张 FOV 增加速度感）
+	var fov_target := DEFAULT_FOV
 	if is_aiming:
-		camera.fov = move_toward(camera.fov, AIM_FOV, delta * 150.0)
-	else:
-		camera.fov = move_toward(camera.fov, DEFAULT_FOV, delta * 150.0)
+		fov_target = AIM_FOV
+	elif _melee_active:
+		fov_target = DEFAULT_FOV + 5.0
+	camera.fov = move_toward(camera.fov, fov_target, delta * 150.0)
 
 	# 落地相机回弹（帧率无关 lerp）
 	camera.position.y = lerp(camera.position.y, 0.0, 1.0 - exp(-5.0 * delta))
+
+	# 近战命中震屏衰减（帧率无关 lerp），叠加在落地回弹之上
+	if _melee_hit_shake > 0.001:
+		camera.position.x += randf_range(-_melee_hit_shake, _melee_hit_shake)
+		camera.position.y += randf_range(-_melee_hit_shake, _melee_hit_shake)
+		_melee_hit_shake = lerp(_melee_hit_shake, 0.0, 1.0 - exp(-25.0 * delta))
 
 	if is_on_floor() and gravity > 1 and !previously_floored:
 		Audio.play("sounds/land.ogg")
@@ -750,26 +761,39 @@ func action_melee() -> void:
 	var init_scale: Vector3 = _melee_sword_init_scale
 
 	# 段1：前摇 0.2s（并行：枪下沉 + 剑从屏外滑入 + scale 0.01→1.0）
+	# 缓动：SINE + EASE_IN，缓慢蓄力逐渐加速，模拟举剑的物理重量感
 	# 瞬移到屏外起点发生在 visible=true 之前，避免可见跳跃
 	melee_viewmodel_instance.position = intro_pos
 	melee_viewmodel_instance.rotation_degrees = intro_rot
 	melee_viewmodel_instance.visible = true
 	_melee_active = true
 	tween.tween_property(container, "position",
-		Vector3(gun_start_pos.x, gun_start_pos.y + GUN_DROP_Y, gun_start_pos.z), 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "position", windup_pos, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", windup_rot, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "scale", init_scale, 0.2)
+		Vector3(gun_start_pos.x, gun_start_pos.y + GUN_DROP_Y, gun_start_pos.z), 0.2) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", windup_pos, 0.2) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", windup_rot, 0.2) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(melee_viewmodel_instance, "scale", init_scale, 0.2) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 
 	# 段2：活跃帧 0.2s（剑下劈，枪保持）
-	tween.tween_property(melee_viewmodel_instance, "position", slash_pos, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", slash_rot, 0.2)
+	# 缓动：QUART + EASE_OUT，快速劈下末尾减速，打击感利落
+	tween.tween_property(melee_viewmodel_instance, "position", slash_pos, 0.2) \
+		.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", slash_rot, 0.2) \
+		.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 
 	# 段3：后摇 0.2s（并行：剑滑出屏外 + 枪回升 + scale 1.0→0.01）
-	tween.tween_property(container, "position", gun_start_pos, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "position", intro_pos, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", intro_rot, 0.2)
-	tween.parallel().tween_property(melee_viewmodel_instance, "scale", Vector3(0.01, 0.01, 0.01), 0.2)
+	# 缓动：QUAD + EASE_IN，收刀逐渐加速离场，自然过渡
+	tween.tween_property(container, "position", gun_start_pos, 0.2) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(melee_viewmodel_instance, "position", intro_pos, 0.2) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(melee_viewmodel_instance, "rotation_degrees", intro_rot, 0.2) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(melee_viewmodel_instance, "scale", Vector3(0.01, 0.01, 0.01), 0.2) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 	# 收尾：隐藏剑 + 释放 _melee_active + 复位剑变换/scale 到 start
 	tween.tween_callback(func():
@@ -817,6 +841,17 @@ func _melee_process_hits() -> void:
 			continue # 本次挥砍已结算过，跳过
 		melee_hit_targets[id] = true
 		body.damage(melee_damage) # 自动触发 HitFeedback.flash，见 ADR 005
+		# 命中反馈：顿帧 + 震屏，增强打击感
+		_apply_hit_stop()
+		_melee_hit_shake = 0.04
+
+# 近战命中顿帧：短暂冻结时间刻度（~3 帧），模拟"砍中实体"的阻滞感
+# 使用 Engine.time_scale + ignore_time_scale 计时器，不影响物理 tick
+func _apply_hit_stop() -> void:
+	Engine.time_scale = 0.05
+	get_tree().create_timer(0.06, true, false, true).timeout.connect(
+		func(): Engine.time_scale = 1.0
+	)
 
 # === 护盾与血量管线（issue 01，ADR 010）===
 # damage(amount)：先减 shield，溢出才减 health；重置护盾 regen 计时器；

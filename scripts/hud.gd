@@ -32,6 +32,9 @@ var _wave_number: int = 0
 @onready var _chest_prompt: Label = _build_chest_prompt()
 @onready var _stuck_prompt: Label = _build_stuck_prompt()
 
+# 武器检视 UI（TAB 打开）
+var _weapon_inspect_ui: Control
+
 func _ready() -> void:
 	add_child(_list)
 	# issue 07：新增 HUD 元素
@@ -41,6 +44,11 @@ func _ready() -> void:
 	add_child(_chest_prompt)
 	# issue 05：卡住提示
 	add_child(_stuck_prompt)
+
+	# 武器检视 UI（ADR 022 配套，TAB 打开）
+	_weapon_inspect_ui = _build_weapon_inspect_ui()
+	add_child(_weapon_inspect_ui)
+
 	# 延迟一帧绑定 player，确保 player._ready 已初始化 weapons 与弹药
 	call_deferred("_bind_player")
 	# issue 07：绑定 RunDirector 信号
@@ -151,6 +159,11 @@ func _on_ammo_updated(weapon_index: int, magazines: Array, reserves: Array) -> v
 			ammo_label.text = "%d / %d" % [mag, res]
 			ammo_label.add_theme_color_override("font_color", HIGHLIGHT_COLOR if is_current else DIM_COLOR)
 			name_label.add_theme_color_override("font_color", HIGHLIGHT_COLOR if is_current else DIM_COLOR)
+
+	# 若武器检视 UI 打开，实时刷新弹药显示
+	if _weapon_inspect_ui and is_instance_valid(_weapon_inspect_ui) and _weapon_inspect_ui.visible:
+		if _weapon_inspect_ui.has_method("refresh_ammo"):
+			_weapon_inspect_ui.refresh_ammo()
 
 func _on_reload_started(weapon_index: int, reload_time: float) -> void:
 	# 只为当前正在换弹的武器行显示进度条
@@ -426,3 +439,50 @@ func _build_stuck_prompt() -> Label:
 func _on_stuck_state_changed(new_state) -> void:
 	# StuckState.NORMAL = 0, STUCK = 1, ESCAPING = 2
 	_stuck_prompt.visible = (new_state == 1)  # 仅 STUCK 时显示
+
+# ============================================================
+# 武器检视 UI（TAB 打开，ADR 022 配套）
+# ============================================================
+
+func _build_weapon_inspect_ui() -> Control:
+	var scene := load("res://scenes/weapon_inspect_ui.tscn") as PackedScene
+	if scene == null:
+		return Control.new()
+	var ui := scene.instantiate() as Control
+	ui.visible = false
+	ui.mouse_filter = Control.MOUSE_FILTER_STOP
+	if ui.has_signal("closed"):
+		ui.closed.connect(_on_weapon_inspect_closed)
+	return ui
+
+func _on_weapon_inspect_closed() -> void:
+	# 仅当游戏未暂停时才恢复鼠标捕获
+	if not get_tree().paused:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _can_open_weapon_inspect() -> bool:
+	# 只在游戏进行中可用（非暂停、非死亡）
+	if get_tree().paused:
+		return false
+	if _player == null or not is_instance_valid(_player):
+		return false
+	# 检查是否有其他 UI 打开
+	var shop_uis := get_tree().get_nodes_in_group("shop_ui")
+	for s in shop_uis:
+		if s is Control and s.visible:
+			return false
+	return true
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.keycode == KEY_TAB and event.pressed:
+		if _weapon_inspect_ui == null or not is_instance_valid(_weapon_inspect_ui):
+			return
+		if _weapon_inspect_ui.visible:
+			_weapon_inspect_ui.close()
+			get_viewport().set_input_as_handled()
+			return
+		if not _can_open_weapon_inspect():
+			return
+		if _player:
+			_weapon_inspect_ui.open(_player)
+			get_viewport().set_input_as_handled()

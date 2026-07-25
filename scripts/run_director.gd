@@ -254,9 +254,9 @@ const MONSTER_COST := {
 	&"enemy": 10,
 }
 
-## 第 N 波的分数预算：30 × 1.5^(N-1)，即每波预算为上一波的 1.5 倍
+## 第 N 波的分数预算：60 × 1.2^(N-1)，即每波预算为上一波的 1.2 倍
 func wave_budget(wave_number: int) -> int:
-	return int(round(30.0 * pow(1.5, wave_number - 1)))
+	return int(round(60.0 * pow(1.2, wave_number - 1)))
 
 ## 当前波次可用的怪物类型（按波分阶段解锁，与旧规则一致）
 func _available_types(wave_number: int) -> Array[StringName]:

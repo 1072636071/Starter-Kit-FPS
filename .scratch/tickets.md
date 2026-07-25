@@ -23,5 +23,6 @@
 | 小地图系统 | `.scratch/minimap/`（issues/，无 PRD；ADR 007 为设计依据） |
 | 竞技场可玩性修复 | `.scratch/arena-fixes/`（PRD.md + issues/） |
 | 护盾 HUD 信息展示 | `.scratch/shield-hud/`（PRD.md） |
+| 敌人跳跃导航系统 | `.scratch/enemy-jump-navigation/`（PRD.md；ADR 021 为设计依据） |
 
 按**前沿**推进：任何阻塞者全部完成的工单。Triage 标签见 `docs/agents/triage-labels.md`。

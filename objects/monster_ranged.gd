@@ -44,6 +44,8 @@ func _ready():
 	health = 80.0
 	# 远程怪视力更好（被动感知范围 12m vs 近战 8m）
 	awareness_range = 12.0
+	# ADR 021：远程怪跳跃高度 2m（仅能上矮平台）
+	jump_height = 2.0
 	super._ready()
 
 	# 随机 strafe 方向

@@ -5,7 +5,7 @@
 波次怪物组成从**固定数量 + 固定比例**改为**分数预算制**：
 
 - 每种怪物类型有**刷出成本（Monster Cost）**：`monster_melee`=5, `monster_ranged`=8, `enemy`=10（与击杀奖励值一致）。
-- 每波有**分数预算（Wave Budget）**：`wave_budget(N) = 30 × 1.5^(N-1)`。
+- 每波有**分数预算（Wave Budget）**：`wave_budget(N) = 60 × 1.2^(N-1)`。
 - 刷怪时从可用类型中**随机选取**，直到总成本 ≥ 预算（即"接近并大于预算"）。
 - 类型**分阶段解锁**保留：1-3 波仅 melee、4-6 波加 ranged、7+ 波加 enemy。
 
@@ -33,4 +33,4 @@
 - **代码**：`run_director.gd` 中 `compute_wave_composition` 重写，新增 `MONSTER_COST` 常量、`wave_budget()` 和 `_available_types()` 函数。旧固定比例逻辑移除。
 - **测试**：`test_run_director.gd` 和 `test_monster_fall_death.gd` 中断言从固定数量改为预算约束 + 类型约束。波 1 断言从 4 只改为 6 只（预算 30 / 成本 5）。
 - **词汇表**：`CONTEXT.md` 新增 `Monster Cost`、`Wave Budget` 术语，更新 `Escalation` 定义。
-- **平衡**：波 1 从 4 只 melee 变为 6 只（+50%），后期波次因 1.5× 指数增长远超原线性方案。基础预算 30 为 `@export` 可调备选（当前为 hardcoded 常量，但可通过改为 `@export var wave_budget_base: int = 30` 实现配置化，留作未来增强）。
+- **平衡**：波 1 从 4 只 melee 变为 12 只（+200%），后期波次因 1.5× 指数增长远超原线性方案。基础预算 60 为 `@export` 可调备选（当前为 hardcoded 常量，但可通过改为 `@export var wave_budget_base: int = 60` 实现配置化，留作未来增强）。

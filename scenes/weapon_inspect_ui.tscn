@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://cweaponinspect01"]
+
+[ext_resource type="Script" path="res://scripts/weapon_inspect_ui.gd" id="1_wis"]
+
+[node name="WeaponInspectUI" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_wis")

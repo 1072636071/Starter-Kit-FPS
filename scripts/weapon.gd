@@ -37,3 +37,11 @@ class_name Weapon
 @export_range(0.1, 10) var reload_time: float = 1.5 # 换弹时间（秒）
 # issue 04（ADR 012）：商店按"发"购买 reserve 时每发的金价。初值 blaster=1、blaster_repeater=2（强枪更贵）
 @export var gold_cost_per_bullet: int = 1
+
+@export_subgroup("Identity (ADR 022)")
+@export var ammo_type: StringName = &"手枪弹"           # 弹药类型（手枪弹/步枪弹/霰弹/狙击弹/能量电池/榴弹）
+@export var weapon_cost: int = 30                        # 商店售价（金）
+@export var durability_max: int = 150                    # 最大耐久（每扣扳机 -1，归零枪爆）
+@export var role_title: String = ""                      # 角色定位，如 "入门可靠型"
+@export var role_features: String = ""                   # 核心特征描述
+@export var reliability_stars: int = 2                   # 可靠性 ★ 1-3

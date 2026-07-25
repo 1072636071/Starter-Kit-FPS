@@ -4,7 +4,7 @@ extends CharacterBody3D
 ## 参见 ADR 017 与 CONTEXT.md「敌人 AI 系统」
 
 # === AI 状态机 ===
-enum AIState { IDLE, CHASE, ATTACK, RETREAT, LOST }
+enum AIState { IDLE, CHASE, ATTACK, RETREAT, LOST, JUMP }
 
 @export var player: Node3D
 @export var move_speed: float = 3.0
@@ -15,6 +15,10 @@ enum AIState { IDLE, CHASE, ATTACK, RETREAT, LOST }
 ## 被动感知半径：怪物在 IDLE 态下能直接看到很近的玩家的距离
 ## （不穿墙，用视线检测）。子类覆盖：近战 8m、远程 12m。
 @export var awareness_range: float = 8.0
+## 跳跃高度（m）：怪物能跳上的最大垂直落差。子类覆盖：近战 5m、远程 2m
+@export var jump_height: float = 2.0
+## 跳跃初速度（由 jump_height 计算，gravity=20.0）
+var jump_velocity: float = 0.0
 
 var gravity: float = 0.0
 var _dead := false
@@ -23,6 +27,10 @@ var _is_attacking := false
 
 # FSM 状态
 var _ai_state: AIState = AIState.IDLE
+
+# JUMP 状态
+var _jump_end_target: Vector3 = Vector3.ZERO
+var _jump_air_time: float = 0.0
 
 # 天空缓降
 const DROP_HEIGHT := 8.0
@@ -87,6 +95,9 @@ func _ready():
 	_path_timer_offset = (spawn_index % 6) * 0.05
 	_path_timer = _path_timer_offset
 
+	# 计算跳跃初速度（v = sqrt(2*g*h)，g=20.0）
+	jump_velocity = sqrt(2.0 * 20.0 * jump_height)
+
 ## 配置 RVO 避障（缓降期间禁用，落地后启用）
 func _setup_rvo() -> void:
 	if not nav_agent:
@@ -99,6 +110,7 @@ func _setup_rvo() -> void:
 	nav_agent.avoidance_layers = 1
 	nav_agent.avoidance_mask = 1
 	nav_agent.velocity_computed.connect(_on_velocity_computed)
+	nav_agent.link_reached.connect(_on_link_reached)
 
 ## 碰撞层隔离：怪物 layer=2, mask=1（只撞地形，不撞其他怪物）
 func _setup_collision_layers() -> void:
@@ -173,6 +185,17 @@ func _physics_process(delta: float) -> void:
 
 	# 路径更新节流
 	_path_timer -= delta
+
+	# JUMP 状态：直接物理，绕过 RVO
+	if _ai_state == AIState.JUMP:
+		velocity = _desired_velocity
+		move_and_slide()
+		# 跳跃动画
+		if anim_player and anim_player.has_animation("jump"):
+			if _current_anim != "jump":
+				anim_player.play("jump")
+				_current_anim = "jump"
+		return
 
 	# 设定期望速度给 RVO（回调中执行 move_and_slide）
 	nav_agent.velocity = _desired_velocity
@@ -259,6 +282,10 @@ func _change_state(new_state: AIState) -> void:
 			path_update_interval = 0.3
 		AIState.IDLE:
 			_desired_velocity = Vector3.ZERO
+		AIState.JUMP:
+			# 跳跃开始：设垂直速度 + 重置空中计时
+			_jump_air_time = 0.0
+			gravity = -jump_velocity
 		_:
 			pass
 
@@ -274,6 +301,8 @@ func _tick_state(delta: float) -> void:
 			_tick_retreat(delta)
 		AIState.LOST:
 			_tick_lost(delta)
+		AIState.JUMP:
+			_tick_jump(delta)
 
 # === 子类覆盖的状态行为 ===
 func _tick_idle(_delta: float) -> void:
@@ -317,6 +346,28 @@ func _tick_lost(delta: float) -> void:
 		else:
 			# 缓慢转向扫描
 			rotate_y(_look_yaw_dir * 1.5 * delta)
+
+## JUMP 状态：沿链接方向跳跃，落地后切回 CHASE
+func _tick_jump(delta: float) -> void:
+	_jump_air_time += delta
+	# 水平朝链接终点移动
+	var to_target := _jump_end_target - global_position
+	to_target.y = 0.0
+	var h_dir := to_target.normalized() if to_target.length() > 0.1 else Vector3.ZERO
+	_desired_velocity = Vector3(h_dir.x * move_speed, -gravity, h_dir.z * move_speed)
+	if h_dir.length_squared() > 0.01:
+		_face_direction(h_dir)
+	# 落地检测（防首帧误判：需离地 ≥ 0.1s）
+	if is_on_floor() and _jump_air_time > 0.1:
+		gravity = 0.0
+		_change_state(AIState.CHASE)
+
+## NavigationAgent3D.link_reached 回调：进入 JUMP 状态
+func _on_link_reached(details: Dictionary) -> void:
+	if _ai_state != AIState.CHASE:
+		return  # 非追踪态不跳
+	_jump_end_target = details.get("position", global_position)
+	_change_state(AIState.JUMP)
 
 ## 子类覆盖：返回追踪目标点（基类=玩家位置，近战怪加偏移）
 func _get_chase_target() -> Vector3:
