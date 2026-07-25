@@ -75,8 +75,8 @@ func _bind_player() -> void:
 	# 初始护盾显示
 	_on_shield_updated(player.shield, player.shield_max)
 	_shield_rate_label.text = "%.0f/s" % (player.shield_regen_rate + player.shield_regen_rate_bonus)
-	# 用 player 当前快照做首次渲染
-	_on_ammo_updated(player.weapon_index, player.magazine.duplicate(), player.reserve.duplicate())
+	# 用 player 当前快照做首次渲染（issue 09：备弹经弹药池快照展开）
+	_on_ammo_updated(player.weapon_index, player.magazine.duplicate(), player.get_reserves_snapshot())
 
 func _build_list() -> VBoxContainer:
 	var vbox := VBoxContainer.new()

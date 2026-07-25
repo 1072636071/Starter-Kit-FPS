@@ -24,5 +24,6 @@
 | 竞技场可玩性修复 | `.scratch/arena-fixes/`（PRD.md + issues/） |
 | 护盾 HUD 信息展示 | `.scratch/shield-hud/`（PRD.md） |
 | 敌人跳跃导航系统 | `.scratch/enemy-jump-navigation/`（PRD.md；ADR 021 为设计依据） |
+| Roguelike 竞技场系统 | `.scratch/roguelike-arena/`（PRD.md + 27 issues；ADR 009–022） |
 
 按**前沿**推进：任何阻塞者全部完成的工单。Triage 标签见 `docs/agents/triage-labels.md`。

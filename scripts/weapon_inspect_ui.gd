@@ -128,7 +128,7 @@ func _build_ui() -> void:
 	root.add_child(hint)
 
 	# 为每个槽位构建卡片
-	var slot_count := _player.weapons.size()
+	var slot_count: int = _player.weapons.size()
 	for i in range(3):
 		var card := _build_weapon_card(i, slot_count)
 		cards_row.add_child(card)
@@ -241,8 +241,8 @@ func _build_filled_card(content: VBoxContainer, refs: Dictionary, slot: int) -> 
 	refs["accuracy_bar"] = _add_stat_bar(content, "精度", _accuracy_label(w), _accuracy_fill(w), _bar_color_for_accuracy(w.spread))
 
 	# ── 弹匣 / 备弹 ──
-	var mag := _player.magazine[slot] if slot < _player.magazine.size() else 0
-	var res := _player.reserve[slot] if slot < _player.reserve.size() else 0
+	var mag: int = _player.magazine[slot] if slot < _player.magazine.size() else 0
+	var res: int = _player.get_reserve(w) # issue 09：备弹为按 ammo_type 共享的弹药池
 	refs["ammo_state"] = _add_stat_row(content, "弹药", "%d / %d" % [mag, res], STAT_LABEL_COLOR, STAT_VALUE_COLOR)
 	refs["magazine_label"] = _add_stat_row(content, "弹匣容量", "%d 发" % w.magazine_size, STAT_LABEL_COLOR, STAT_VALUE_COLOR)
 	refs["reserve_label"] = _add_stat_row(content, "备弹上限", "%d 发" % w.max_reserve, STAT_LABEL_COLOR, STAT_VALUE_COLOR)
@@ -384,7 +384,7 @@ func _apply_card_border(panel: PanelContainer, slot: int, slot_count: int) -> vo
 		sb.border_width_bottom = 1
 
 func _refresh_all_borders() -> void:
-	var slot_count := _player.weapons.size()
+	var slot_count: int = _player.weapons.size()
 	for i in range(3):
 		if i < _card_panels.size():
 			_apply_card_border(_card_panels[i], i, slot_count)
@@ -419,8 +419,8 @@ func _refresh_compare_indicators() -> void:
 		return
 
 	var ref_w: Weapon = _player.weapons[_pinned_index]
-	var ref_dps := _calc_dps(ref_w)
-	var slot_count := _player.weapons.size()
+	var ref_dps: float = _calc_dps(ref_w)
+	var slot_count: int = _player.weapons.size()
 
 	for i in range(slot_count):
 		if i == _pinned_index:
@@ -489,7 +489,7 @@ func _mark_as_reference(refs: Dictionary, _w: Weapon) -> void:
 	for key in refs:
 		var node = refs[key]
 		if node is Label:
-			var t := node.text
+			var t: String = node.text
 			if t.begins_with("▲") or t.begins_with("▼") or t.begins_with("= "):
 				node.text = t.substr(2)
 			node.add_theme_color_override("font_color", STAT_VALUE_COLOR)
@@ -498,7 +498,7 @@ func _mark_as_reference(refs: Dictionary, _w: Weapon) -> void:
 			pass  # _refresh_compare_indicators 里已处理
 
 func _reset_all_comparisons() -> void:
-	var slot_count := _player.weapons.size()
+	var slot_count: int = _player.weapons.size()
 	for i in range(slot_count):
 		if i >= _card_content_refs.size():
 			continue
@@ -509,7 +509,7 @@ func _reset_all_comparisons() -> void:
 		for key in refs:
 			var node = refs[key]
 			if node is Label:
-				var t := node.text
+				var t: String = node.text
 				if t.begins_with("▲") or t.begins_with("▼") or t.begins_with("= "):
 					node.text = t.substr(2)
 				node.add_theme_color_override("font_color", STAT_VALUE_COLOR)
@@ -596,7 +596,7 @@ func _bar_color_for_durability(durability: int) -> Color:
 func refresh_ammo() -> void:
 	if not _open or _player == null:
 		return
-	var slot_count := _player.weapons.size()
+	var slot_count: int = _player.weapons.size()
 	for i in range(slot_count):
 		if i >= _card_content_refs.size():
 			continue
@@ -604,8 +604,9 @@ func refresh_ammo() -> void:
 		if refs.is_empty():
 			continue
 		if "ammo_state" in refs:
-			var mag := _player.magazine[i] if i < _player.magazine.size() else 0
-			var res := _player.reserve[i] if i < _player.reserve.size() else 0
+			var mag: int = _player.magazine[i] if i < _player.magazine.size() else 0
+			# issue 09：备弹为按 ammo_type 共享的弹药池
+			var res: int = _player.get_reserve(_player.weapons[i]) if i < _player.weapons.size() else 0
 			var lbl: Label = refs["ammo_state"]
 			lbl.text = "%d / %d" % [mag, res]
 	# 边框随当前武器变化而更新

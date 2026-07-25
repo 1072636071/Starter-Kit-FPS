@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b8bi440tpmfkm"]
+
+[ext_resource type="Script" path="res://tests/test_module_hooks.gd" id="1_test"]
+
+[node name="TestModuleHooks" type="Node3D"]
+script = ExtResource("1_test")

@@ -1,5 +1,8 @@
 ## 竞技场 Issue 04 测试：子弹商店摊位（walk-in 暂停 + 购买扣金币加备弹封顶 + 降级）
 ## 运行：godot --headless --path . res://tests/test_shop.tscn --quit-after 600
+## issue 09 适配：备弹改为按 Weapon.ammo_type 共享的弹药池（两把武器同为「能量电池」），
+## 单价改用 shop_ui.AMMO_COST_PER_TYPE（能量电池 1 金/发，过渡初值），
+## Weapon.gold_cost_per_bullet 已 deprecated（仅保留字段兼容）。
 extends Node3D
 
 var failures: int = 0
@@ -16,24 +19,19 @@ func _check(condition: bool, msg: String) -> void:
 		failures += 1
 
 func _run_tests() -> void:
-	# === 1. Weapon 资源：gold_cost_per_bullet 字段 + .tres backfill ===
-	var weapon_script := preload("res://scripts/weapon.gd")
+	# === 1. issue 09：gold_cost_per_bullet 字段保留（deprecated），商店改用弹药成本表 ===
 	var w := Weapon.new()
-	_check(int(w.get("gold_cost_per_bullet")) == 1, "Weapon.gold_cost_per_bullet default 1 (got %d)" % int(w.get("gold_cost_per_bullet")))
-
-	var blaster := load("res://weapons/blaster.tres")
-	_check(int(blaster.get("gold_cost_per_bullet")) == 1, "blaster.tres gold_cost_per_bullet == 1 (got %d)" % int(blaster.get("gold_cost_per_bullet")))
-	var repeater := load("res://weapons/blaster-repeater.tres")
-	_check(int(repeater.get("gold_cost_per_bullet")) == 2, "blaster-repeater.tres gold_cost_per_bullet == 2 (got %d)" % int(repeater.get("gold_cost_per_bullet")))
+	_check(int(w.get("gold_cost_per_bullet")) == 1,
+		"Weapon.gold_cost_per_bullet field retained (deprecated, default 1, got %d)" % int(w.get("gold_cost_per_bullet")))
 
 	# === 2. 准备 player + run_director + shop_ui ===
 	var player_scene := preload("res://objects/player.tscn")
 	var player: CharacterBody3D = player_scene.instantiate()
 	player.add_to_group("player")
 	add_child(player)
-	# 把 blaster 备弹清零，方便观察购买增量
-	player.reserve[0] = 0
-	player.reserve[1] = 0
+	# issue 09：两把武器共享「能量电池」弹药池；清零方便观察购买增量
+	_check(player.weapons[0].ammo_type == &"能量电池", "blaster ammo_type = 能量电池")
+	player.ammo_reserve[&"能量电池"] = 0
 	# 给玩家一些初始金币（通过 run_director.add_gold）
 	var rd := preload("res://scripts/run_director.gd").new()
 	rd.rng_seed = 42
@@ -53,30 +51,29 @@ func _run_tests() -> void:
 	_shop_closed_count = 0
 	shop_ui.closed.connect(func(): _shop_closed_count += 1)
 
-	# === 3. 购买 +1（blaster 金价 1）===
+	# issue 09：单价来自弹药成本表（能量电池 1 金/发）
+	_check(shop_ui._cost_per_bullet(player.weapons[0]) == 1,
+		"cost per bullet for 能量电池 = 1 (got %d)" % shop_ui._cost_per_bullet(player.weapons[0]))
+
+	# === 3. 购买 +1（能量电池 1 金/发）===
 	var gold_pre: int = rd.gold
 	var bought: int = shop_ui.buy_bullets(0, 1)
 	_check(bought == 1, "buy_bullets(0,1) returns 1 (got %d)" % bought)
-	_check(rd.gold == gold_pre - 1, "gold -1 after buying 1 blaster bullet (got %d)" % rd.gold)
-	_check(player.reserve[0] == 1, "reserve[0] +1 (got %d)" % player.reserve[0])
+	_check(rd.gold == gold_pre - 1, "gold -1 after buying 1 bullet (got %d)" % rd.gold)
+	_check(player.get_reserve(player.weapons[0]) == 1, "pool +1 (got %d)" % player.get_reserve(player.weapons[0]))
 
-	# === 4. 购买 +10 但金币不足 → 降级到买得起的数量 ===
-	# repeater 金价 2，rd.gold=99，最多买 49 发（99/2=49）
+	# === 4. 购买 +10（金币足够，买满 10 发，1 金/发）===
 	gold_pre = rd.gold
-	var max_affordable: int = gold_pre / 2
 	bought = shop_ui.buy_bullets(1, 10)
-	# 10 < 49，所以买满 10 发
 	_check(bought == 10, "buy_bullets(1,10) returns 10 (gold enough, got %d)" % bought)
-	_check(rd.gold == gold_pre - 10 * 2, "gold -20 after 10 repeater bullets (got %d)" % rd.gold)
-	_check(player.reserve[1] == 10, "reserve[1] +10 (got %d)" % player.reserve[1])
+	_check(rd.gold == gold_pre - 10, "gold -10 after 10 bullets (got %d)" % rd.gold)
+	_check(player.get_reserve(player.weapons[1]) == 11, "pool 11 after +10 (got %d)" % player.get_reserve(player.weapons[1]))
 
-	# === 5. 买满（repeater max_reserve=96，bonus=0，effective=96；当前 10，headroom=86）===
-	# 需 86×2=172 金币才买满，当前 gold=79 不足 → 先补金
+	# === 5. 买满（repeater max_reserve=96，bonus=0，effective=96；当前 11，headroom=85）===
 	rd.add_gold(100)
-	_check(rd.gold == 179, "rd.gold == 179 after +100 (got %d)" % rd.gold)
 	bought = shop_ui.buy_bullets(1, 9999)
-	_check(bought == 86, "buy_max repeater returns 86 (headroom, got %d)" % bought)
-	_check(player.reserve[1] == 96, "reserve[1] == 96 (effective max, got %d)" % player.reserve[1])
+	_check(bought == 85, "buy_max repeater returns 85 (headroom, got %d)" % bought)
+	_check(player.get_reserve(player.weapons[1]) == 96, "pool == 96 (effective max, got %d)" % player.get_reserve(player.weapons[1]))
 	_check(shop_ui.is_full(1) == true, "is_full(1) == true after buy_max")
 
 	# === 6. 已满时 buy_bullets 返回 0 ===
@@ -89,10 +86,10 @@ func _run_tests() -> void:
 	rd.spend_gold(rd.gold)  # 清空
 	_check(rd.gold == 0, "gold drained to 0 (got %d)" % rd.gold)
 	_check(bool(shop_ui.can_afford(0, 1)) == false, "can_afford(0,1) false when gold==0")
-	# blaster 当前 reserve[0]=1，未满，但金币不足 → buy 返回 0
+	# 池已满 96，金币为 0：buy 返回 0（先撞上限）
 	bought = shop_ui.buy_bullets(0, 1)
-	_check(bought == 0, "buy_bullets(0,1) returns 0 when gold insufficient (got %d)" % bought)
-	_check(player.reserve[0] == 1, "reserve[0] unchanged when gold insufficient (got %d)" % player.reserve[0])
+	_check(bought == 0, "buy_bullets(0,1) returns 0 when full/gold insufficient (got %d)" % bought)
+	_check(player.get_reserve(player.weapons[0]) == 96, "pool unchanged (got %d)" % player.get_reserve(player.weapons[0]))
 	# 恢复金币继续后续测试
 	rd.add_gold(gold_saved)
 
@@ -120,7 +117,7 @@ func _run_tests() -> void:
 	var player2: CharacterBody3D = player_scene.instantiate()
 	player2.add_to_group("player")
 	add_child(player2)
-	player2.reserve[0] = 0
+	player2.ammo_reserve[&"能量电池"] = 0
 
 	var rd2 := preload("res://scripts/run_director.gd").new()
 	rd2.rng_seed = 7
@@ -147,10 +144,10 @@ func _run_tests() -> void:
 	_check(shop_ui2.is_open() == true, "shop_ui2 opened by station")
 	_check(shop_ui2.visible == true, "shop_ui2 visible after walk-in")
 
-	# 在暂停态下买 5 发 blaster（金价 1，gold=50 够）
+	# 在暂停态下买 5 发（能量电池 1 金/发，gold=50 够）
 	bought = shop_ui2.buy_bullets(0, 5)
-	_check(bought == 5, "bought 5 blaster bullets while paused (got %d)" % bought)
-	_check(player2.reserve[0] == 5, "reserve[0] == 5 after paused purchase (got %d)" % player2.reserve[0])
+	_check(bought == 5, "bought 5 bullets while paused (got %d)" % bought)
+	_check(player2.get_reserve(player2.weapons[0]) == 5, "pool == 5 after paused purchase (got %d)" % player2.get_reserve(player2.weapons[0]))
 	_check(rd2.gold == 45, "rd2.gold == 45 after 5 bullets (got %d)" % rd2.gold)
 
 	# === 11. 关闭路径：ESC / 关闭按钮 / body_exited 都汇入 shop_ui.close() ===
@@ -185,7 +182,7 @@ func _run_tests() -> void:
 	await get_tree().process_frame
 
 	if failures == 0:
-		print("[TEST] PASS — arena issue 04 shop station")
+		print("[TEST] PASS — arena issue 04 shop station (issue 09 pool adapted)")
 		get_tree().quit(0)
 	else:
 		print("[TEST] FAIL — %d assertion(s) failed" % failures)

@@ -15,6 +15,17 @@ extends Control
 
 signal closed
 
+# issue 09（ADR 022）：弹药成本表——按弹药类型（Weapon.ammo_type）计每发金价。
+# 取代 Weapon.gold_cost_per_bullet（已 deprecated）；数值为过渡初值，issue 15/16 定稿。
+const AMMO_COST_PER_TYPE: Dictionary = {
+	&"手枪弹": 1,
+	&"能量电池": 1,
+}
+
+## 某武器对应弹药类型的每发金价（未登记的类型默认 1 金/发）
+func _cost_per_bullet(w: Weapon) -> int:
+	return int(AMMO_COST_PER_TYPE.get(w.ammo_type, 1))
+
 var _player: Node3D
 var _run_director: Node
 var _open := false
@@ -88,24 +99,24 @@ func effective_cap(weapon_index: int) -> int:
 	var w: Weapon = _player.weapons[weapon_index]
 	return _player.effective_max_reserve(w)
 
-## 是否已满（reserve >= effective_cap）
+## 是否已满（弹药池余量 >= effective_cap，issue 09）
 func is_full(weapon_index: int) -> bool:
 	if _player == null or not is_instance_valid(_player):
 		return false
-	return _player.reserve[weapon_index] >= effective_cap(weapon_index)
+	return _player.get_reserve(_player.weapons[weapon_index]) >= effective_cap(weapon_index)
 
 ## 金币是否够买 count 发
 func can_afford(weapon_index: int, count: int) -> bool:
 	if _run_director == null:
 		return false
 	var w: Weapon = _player.weapons[weapon_index]
-	return _run_director.gold >= w.gold_cost_per_bullet * count
+	return _run_director.gold >= _cost_per_bullet(w) * count
 
 ## 核心购买逻辑：买 requested_count 发，返回实际买入数（金币不足/接近上限时降级）
-## - 上限封顶：实际买入不超过 effective_cap - current_reserve
+## - 上限封顶：实际买入不超过 effective_cap - 弹药池当前余量
 ## - 金币不足：降到 gold / cost_per_bullet 能买的数量
 ## - 扣金币：run_director.spend_gold(actual * cost_per)
-## - 加备弹：player.reserve[idx] += actual
+## - 加备弹：player.add_reserve(w, actual)（issue 09：按 ammo_type 共享弹药池）
 ## - 广播 ammo_updated 让 HUD 同步刷新
 func buy_bullets(weapon_index: int, requested_count: int) -> int:
 	if not _open:
@@ -117,11 +128,11 @@ func buy_bullets(weapon_index: int, requested_count: int) -> int:
 	if weapon_index < 0 or weapon_index >= _player.weapons.size():
 		return 0
 	var w: Weapon = _player.weapons[weapon_index]
-	var cost_per: int = w.gold_cost_per_bullet
+	var cost_per: int = _cost_per_bullet(w)
 	if cost_per <= 0:
 		return 0
 	var cap: int = effective_cap(weapon_index)
-	var current: int = _player.reserve[weapon_index]
+	var current: int = _player.get_reserve(w)
 	var headroom: int = cap - current
 	if headroom <= 0:
 		return 0  # 已满
@@ -135,7 +146,7 @@ func buy_bullets(weapon_index: int, requested_count: int) -> int:
 	var cost: int = actual * cost_per
 	if not _run_director.spend_gold(cost):
 		return 0
-	_player.reserve[weapon_index] += actual
+	_player.add_reserve(w, actual)
 	# 广播弹药刷新（信号回调不受暂停影响，HUD 会同步更新）
 	if _player.has_method("_emit_ammo_updated"):
 		_player._emit_ammo_updated()
@@ -149,7 +160,7 @@ func buy_bullets(weapon_index: int, requested_count: int) -> int:
 func buy_max(weapon_index: int) -> int:
 	if _player == null or not is_instance_valid(_player):
 		return 0
-	var headroom: int = effective_cap(weapon_index) - int(_player.reserve[weapon_index])
+	var headroom: int = effective_cap(weapon_index) - _player.get_reserve(_player.weapons[weapon_index])
 	return buy_bullets(weapon_index, headroom)
 
 # ============================================================
@@ -242,7 +253,7 @@ func _build_rows() -> void:
 		cost_lbl.add_theme_font_size_override("font_size", 18)
 		cost_lbl.custom_minimum_size = Vector2(80, 0)
 		cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_lbl.text = "%d金/发" % w.gold_cost_per_bullet
+		cost_lbl.text = "%d金/发" % _cost_per_bullet(w)
 		row.add_child(cost_lbl)
 
 		var btn1 := Button.new()
@@ -292,7 +303,7 @@ func _refresh_row(idx: int) -> void:
 		return
 	var row: Dictionary = _rows[idx]
 	var w: Weapon = _player.weapons[idx]
-	var current: int = _player.reserve[idx]
+	var current: int = _player.get_reserve(w)
 	var cap: int = effective_cap(idx)
 	(row["ammo"] as Label).text = "%d / %d" % [current, cap]
 

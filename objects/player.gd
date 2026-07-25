@@ -12,7 +12,12 @@ enum StuckState { NORMAL, STUCK, ESCAPING }
 @export var jump_strength = 8
 
 @export_subgroup("Weapons")
-@export var weapons: Array[Weapon] = []
+## 已装备武器列表；上限 MAX_WEAPONS（issue 09，超出截断）
+@export var weapons: Array[Weapon] = []:
+	set(value):
+		weapons = value
+		if weapons.size() > MAX_WEAPONS:
+			weapons.resize(MAX_WEAPONS)
 
 @export_subgroup("Health & Shield")
 ## 最大血量（issue 03 / 05 共用，升级 +20 最大血量受此上限约束）
@@ -33,10 +38,22 @@ enum StuckState { NORMAL, STUCK, ESCAPING }
 var weapon: Weapon
 var weapon_index := 0
 
-# 弹药状态：每把枪独立的弹匣 / 备弹（与 weapons 数组同序）
-# 参见 ADR 004 与 CONTEXT.md「弹药系统」。
+# 武器数量上限（issue 09，ADR 022）
+const MAX_WEAPONS := 3
+# 弹药池初始值（issue 09）：每种弹药类型初始 36 发
+const INITIAL_AMMO_PER_TYPE := 36
+# 保底弹药类型：弹药池至少包含手枪弹（issue 09）
+const AMMO_TYPE_PISTOL: StringName = &"手枪弹"
+
+# 弹药状态：弹匣按武器独立（与 weapons 数组同序）；
+# 备弹为按弹药类型（Weapon.ammo_type）共享的弹药池（issue 09，ADR 022）。
+# 参见 ADR 004 / 022 与 CONTEXT.md「弹药系统」。
 var magazine: Array[int] = []
-var reserve: Array[int] = []
+## 弹药池：键为 StringName 弹药类型，值为剩余备弹数；同类弹药武器共享同一池
+var ammo_reserve: Dictionary = {}
+# 武器耐久（issue 09，ADR 022）：与 weapons 数组同序，初始 = durability_max；
+# durability_max <= 0 表示无限耐久（跳过追踪）
+var weapon_durability: Array[int] = []
 
 # 换弹状态
 var is_reloading := false
@@ -175,15 +192,22 @@ func _ready():
 	_shield_regen_timer = 0.0
 	_dead = false
 
-	# 初始化每把枪的弹匣/备弹（满弹匣 + 满备弹）
+	# 初始化弹药状态（issue 09）：
+	# 弹匣按武器独立（满弹匣）；备弹为按 ammo_type 共享的弹药池，
+	# 按已装备武器的 ammo_type 建键（保底含手枪弹），初始 36 发/类
 	magazine.clear()
-	reserve.clear()
+	ammo_reserve.clear()
+	weapon_durability.clear()
+	ammo_reserve[AMMO_TYPE_PISTOL] = INITIAL_AMMO_PER_TYPE
 	for w in weapons:
 		magazine.append(w.magazine_size)
-		reserve.append(w.max_reserve)
+		if not ammo_reserve.has(w.ammo_type):
+			ammo_reserve[w.ammo_type] = INITIAL_AMMO_PER_TYPE
+		weapon_durability.append(w.durability_max)
 
-	weapon = weapons[weapon_index] # Weapon must never be nil
-	initiate_change_weapon(weapon_index)
+	if not weapons.is_empty():
+		weapon = weapons[weapon_index]
+		initiate_change_weapon(weapon_index)
 	_emit_ammo_updated()
 
 	# 近战视图模型：实例化一次，挂 CameraItem 下（与 Container 平级，不在 Container 内
@@ -328,10 +352,31 @@ func _process(delta):
 	if position.y < -10:
 		get_tree().reload_current_scene()
 
-# 弹药快照广播 —— 任何修改 magazine/reserve 的操作后调用
+# 弹药快照广播 —— 任何修改 magazine/ammo_reserve 的操作后调用
+# reserves 为按武器展开的备弹快照（同类弹药武器会显示同一池余量），
+# 保持信号签名不变以兼容 HUD / 检视 UI（issue 09）
 func _emit_ammo_updated() -> void:
 	if not is_inside_tree(): return
-	ammo_updated.emit(weapon_index, magazine.duplicate(), reserve.duplicate())
+	ammo_updated.emit(weapon_index, magazine.duplicate(), get_reserves_snapshot())
+
+## 查询某武器对应弹药池的剩余备弹（issue 09）
+func get_reserve(w: Weapon) -> int:
+	if w == null:
+		return 0
+	return int(ammo_reserve.get(w.ammo_type, 0))
+
+## 向弹药池补充备弹（issue 09）；可为负表示消耗。上限检查由调用方负责
+func add_reserve(w: Weapon, amount: int) -> void:
+	if w == null:
+		return
+	ammo_reserve[w.ammo_type] = get_reserve(w) + amount
+
+## 按武器展开当前备弹快照（与 weapons 同序），供 HUD 等读取弹药池（issue 09）
+func get_reserves_snapshot() -> Array[int]:
+	var out: Array[int] = []
+	for w in weapons:
+		out.append(get_reserve(w))
+	return out
 
 # Auto-Step：在地面+水平移动时，自动登高 ≤ step_height 的台阶。
 #
@@ -507,6 +552,7 @@ func action_shoot():
 	if Input.is_action_pressed("shoot"):
 		if !blaster_cooldown.is_stopped(): return # Cooldown for shooting
 		if not camera.is_inside_tree(): return # camera 在 SubViewport 中初始化或场景切换时可能离树
+		if weapon == null: return # 空手（武器全部损毁）不可射击（issue 09）
 
 		# 换弹中禁射
 		if is_reloading: return
@@ -531,6 +577,14 @@ func action_shoot():
 
 		# 扣减弹匣
 		magazine[weapon_index] -= 1
+
+		# 武器耐久（issue 09，ADR 022）：每次成功击发 -1，归零触发武器损毁；
+		# durability_max <= 0 为无限耐久，跳过追踪
+		var shot_weapon_index := weapon_index
+		var weapon_broke := false
+		if weapon.durability_max > 0:
+			weapon_durability[shot_weapon_index] = maxi(0, weapon_durability[shot_weapon_index] - 1)
+			weapon_broke = weapon_durability[shot_weapon_index] <= 0
 
 		blaster_cooldown.start(weapon.cooldown)
 
@@ -569,10 +623,63 @@ func action_shoot():
 
 		_emit_ammo_updated()
 
+		# 耐久归零：武器损毁——碎裂粒子 + 移除 + 自动切换/空手（issue 09）
+		if weapon_broke:
+			_on_weapon_broken(shot_weapon_index)
+
+# 武器耐久归零处理（issue 09）：
+# 播放 0.3s 碎裂粒子 → 从 weapons/magazine/weapon_durability 移除 →
+# 自动切到下一把武器；无武器则进入空手状态（weapon=null, weapon_index=-1）
+func _on_weapon_broken(index: int) -> void:
+	if index < 0 or index >= weapons.size():
+		return
+	_cancel_reload()
+	_spawn_weapon_break_vfx()
+	Audio.play("sounds/weapon_change.ogg")
+	weapons.remove_at(index)
+	weapon_durability.remove_at(index)
+	magazine.remove_at(index)
+	if weapons.is_empty():
+		weapon = null
+		weapon_index = -1
+		for n in container.get_children():
+			container.remove_child(n)
+		if crosshair:
+			crosshair.texture = null
+	else:
+		initiate_change_weapon(mini(index, weapons.size() - 1))
+	_emit_ammo_updated()
+
+# 武器碎裂粒子（issue 09）：0.3s 一次性爆发，世界空间播放后自动释放
+func _spawn_weapon_break_vfx() -> void:
+	var particles := GPUParticles3D.new()
+	particles.amount = 24
+	particles.lifetime = 0.3
+	particles.one_shot = true
+	particles.explosiveness = 1.0
+	var mat := ParticleProcessMaterial.new()
+	mat.direction = Vector3.UP
+	mat.spread = 90.0
+	mat.initial_velocity_min = 2.0
+	mat.initial_velocity_max = 5.0
+	mat.gravity = Vector3(0, -9.8, 0)
+	particles.process_material = mat
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.06, 0.06, 0.06)
+	particles.draw_pass_1 = mesh
+	var parent := get_parent()
+	if parent == null:
+		parent = self
+	parent.add_child(particles)
+	particles.global_position = global_position + Vector3(0, 1.2, 0)
+	particles.emitting = true
+	particles.finished.connect(particles.queue_free)
+
 # Toggle between available weapons (listed in 'weapons')
 
 func action_weapon_toggle():
 	if Input.is_action_just_pressed("weapon_toggle"):
+		if weapons.is_empty(): return # 空手无可切（issue 09）
 		# 切枪取消换弹（不在切换动画末尾才取消，避免新武器继承旧换弹状态）
 		_cancel_reload()
 		weapon_index = wrap(weapon_index + 1, 0, weapons.size())
@@ -583,6 +690,7 @@ func action_weapon_toggle():
 # Initiates the weapon changing animation (tween)
 
 func initiate_change_weapon(index):
+	if index < 0 or index >= weapons.size(): return # 越界/空手守卫（issue 09）
 	weapon_index = index
 
 	tween = get_tree().create_tween()
@@ -593,6 +701,7 @@ func initiate_change_weapon(index):
 # Switches the weapon model (off-screen)
 
 func change_weapon():
+	if weapon_index < 0 or weapon_index >= weapons.size(): return # 空手/越界守卫（issue 09：武器损毁后切枪动画可能仍在途）
 	weapon = weapons[weapon_index]
 
 	# Step 1. Remove previous weapon model(s) from container
@@ -649,9 +758,9 @@ func action_reload(index: int) -> void:
 	if is_reloading: return
 	if index < 0 or index >= weapons.size(): return
 	var w := weapons[index]
-	# 弹匣已满或备弹为零则不换弹
+	# 弹匣已满或弹药池对应类型备弹为零则不换弹（issue 09）
 	if magazine[index] >= w.magazine_size: return
-	if reserve[index] <= 0: return
+	if get_reserve(w) <= 0: return
 
 	is_reloading = true
 	reload_index = index
@@ -678,13 +787,13 @@ func _step_reload(delta: float) -> void:
 	if reload_time_remaining > 0.0:
 		return
 
-	# 完成转移：尽量填满弹匣，备弹不足则只装可用数
+	# 完成转移：尽量填满弹匣，弹药池不足则只装可用数（issue 09：按 ammo_type 共享池）
 	var idx := reload_index
 	var w := weapons[idx]
 	var needed := w.magazine_size - magazine[idx]
-	var moved := mini(needed, reserve[idx])
+	var moved := mini(needed, get_reserve(w))
 	magazine[idx] += moved
-	reserve[idx] -= moved
+	add_reserve(w, -moved)
 
 	_reset_reload_state(false)
 

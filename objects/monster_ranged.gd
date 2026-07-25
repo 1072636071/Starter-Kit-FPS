@@ -5,6 +5,9 @@ extends "res://objects/monster_base.gd"
 const CombatUtils = preload("res://scripts/combat_utils.gd")
 const MONSTER_TYPE: StringName = &"monster_ranged"
 
+## 弹体命中玩家信号（issue 15：DebuffOnHit 模块通过此信号解耦）
+signal projectile_hit_player(player)
+
 @export var preferred_distance: float = 10.0
 @export var too_close_distance: float = 5.0
 @export var burst_count: int = 3
@@ -229,6 +232,9 @@ func _fire_projectile():
 	projectile_instance.color = Color(0.8, 0.1, 1.0)
 	projectile_instance.shooter = self
 
+	# issue 15：连接弹体碰撞信号以检测玩家命中
+	projectile_instance.body_entered.connect(_on_projectile_body_entered.bind(projectile_instance))
+
 	get_tree().root.add_child(projectile_instance)
 	projectile_instance.global_position = shoot_origin
 
@@ -239,6 +245,17 @@ func _fire_projectile():
 		recoil.tween_property(gun_instance, "position:z", gun_instance.position.z, 0.1)
 
 	_play_muzzle_flash()
+
+## issue 15：弹体碰撞回调 —— 命中玩家时 emit projectile_hit_player 信号
+func _on_projectile_body_entered(body: Node3D, projectile: Node3D) -> void:
+	if not is_instance_valid(projectile):
+		return
+	# 断开信号避免重复触发
+	if projectile.body_entered.is_connected(_on_projectile_body_entered):
+		projectile.body_entered.disconnect(_on_projectile_body_entered)
+	if body is CharacterBody3D and body.is_in_group("player"):
+		projectile_hit_player.emit(body)
+
 
 ## 枪口闪光
 func _play_muzzle_flash() -> void:

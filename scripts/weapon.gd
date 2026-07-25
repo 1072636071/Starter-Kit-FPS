@@ -35,7 +35,8 @@ class_name Weapon
 @export_range(1, 999) var magazine_size: int = 8 # 弹匣容量
 @export_range(0, 9999) var max_reserve: int = 40 # 备弹上限
 @export_range(0.1, 10) var reload_time: float = 1.5 # 换弹时间（秒）
-# issue 04（ADR 012）：商店按"发"购买 reserve 时每发的金价。初值 blaster=1、blaster_repeater=2（强枪更贵）
+# DEPRECATED（issue 09，ADR 022）：商店已改用按弹药类型计价的成本表（shop_ui.AMMO_COST_PER_TYPE），
+# 本字段不再被任何逻辑引用，仅为兼容旧 .tres 资源保留；issue 15/16 接弹药成本表后删除。
 @export var gold_cost_per_bullet: int = 1
 
 @export_subgroup("Identity (ADR 022)")

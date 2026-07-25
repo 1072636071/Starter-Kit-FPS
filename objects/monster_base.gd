@@ -6,6 +6,17 @@ extends CharacterBody3D
 # === AI 状态机 ===
 enum AIState { IDLE, CHASE, ATTACK, RETREAT, LOST, JUMP }
 
+# === 行为模块挂钩（issue 09，ADR 022）===
+# 模块 = 挂载在本节点下的普通子节点（Node），按需实现以下方法即自动生效，
+# 未实现的方法自动跳过（has_method 检查）：
+#   module_setup(host)      —— _ready 时调用，拿到宿主怪物引用
+#   on_tick(delta)          —— 每物理帧
+#   on_enter_state(state)   —— FSM 状态转换后（_change_state）
+#   on_exit_state(state)    —— damage() 受击时（见 ADR 022）
+#   on_damage(amount)       —— damage() 受击时
+#   on_death()              —— destroy() 死亡时
+var _modules: Array[Node] = []
+
 @export var player: Node3D
 @export var move_speed: float = 3.0
 @export var chase_range: float = 25.0
@@ -98,6 +109,23 @@ func _ready():
 	# 计算跳跃初速度（v = sqrt(2*g*h)，g=20.0）
 	jump_velocity = sqrt(2.0 * 20.0 * jump_height)
 
+	# 行为模块（issue 09）：收集子节点并回调 module_setup
+	_collect_modules()
+
+## 收集子节点模块并初始化；未实现 module_setup 的子节点仅注册不回调
+func _collect_modules() -> void:
+	_modules.clear()
+	for child in get_children():
+		_modules.append(child)
+		if child.has_method("module_setup"):
+			child.module_setup(self)
+
+## 安全调用每个模块的指定钩子（has_method 检测，未实现的模块自动跳过）
+func _run_module_hook(hook: StringName, args: Array = []) -> void:
+	for m in _modules:
+		if m.has_method(hook):
+			m.callv(hook, args)
+
 ## 配置 RVO 避障（缓降期间禁用，落地后启用）
 func _setup_rvo() -> void:
 	if not nav_agent:
@@ -151,6 +179,8 @@ func _physics_process(delta: float) -> void:
 	if position.y < -10.0:
 		destroy()
 		return
+	# 行为模块钩子（issue 09）：每物理帧 tick（含缓降阶段）
+	_run_module_hook(&"on_tick", [delta])
 	# 缓降阶段
 	if _dropping:
 		gravity = DROP_SPEED
@@ -289,6 +319,9 @@ func _change_state(new_state: AIState) -> void:
 		_:
 			pass
 
+	# 行为模块钩子（issue 09）：状态转换通知
+	_run_module_hook(&"on_enter_state", [new_state])
+
 func _tick_state(delta: float) -> void:
 	match _ai_state:
 		AIState.IDLE:
@@ -423,6 +456,9 @@ func _on_attack_cooldown():
 func damage(amount: float):
 	if _dead:
 		return
+	# 行为模块钩子（issue 09）：受击通知（on_exit_state + on_damage，见 ADR 022）
+	_run_module_hook(&"on_exit_state", [_ai_state])
+	_run_module_hook(&"on_damage", [amount])
 	Audio.play("sounds/enemy_hurt.ogg")
 	HitFeedback.flash(self)
 	health -= amount
@@ -439,6 +475,8 @@ func _monster_type() -> StringName:
 func destroy():
 	Audio.play("sounds/enemy_destroy.ogg")
 	_dead = true
+	# 行为模块钩子（issue 09）：死亡通知
+	_run_module_hook(&"on_death")
 	# 连锁 Aggro：死亡时 emit alert，惊动附近 IDLE 怪物
 	AlertSystem.emit_alert(global_position, DEATH_ALERT_RADIUS)
 	# 关闭 RVO（避免死亡后仍参与避障）

@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3 uid="uid://dtrapbase000000000000001"]
+
+[ext_resource type="Script" path="res://scripts/trap_base.gd" id="1_trap_base"]
+
+[node name="TrapBase" type="Area3D"]
+script = ExtResource("1_trap_base")
+visible = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape3D_trap_base")
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_trap_base"]
+radius = 0.5

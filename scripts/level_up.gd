@@ -89,7 +89,6 @@ func _show_cards(choices: Array) -> void:
 		btn.custom_minimum_size = Vector2(220, 280)
 		btn.add_theme_font_size_override("font_size", 20)
 		btn.alignment = HORIZONTAL_ALIGNMENT_CENTER
-		btn.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		btn.pressed.connect(_on_card_pressed.bind(choice))
 		_card_container.add_child(btn)
 		_card_buttons.append(btn)

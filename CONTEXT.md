@@ -23,9 +23,14 @@
 | 术语 | 定义 |
 |------|------|
 | **Magazine（弹匣）** | 武器当前装入的弹药数。每发射一次减 1，归零后无法射击，必须换弹。每把枪独立维护。 |
-| **Reserve（备弹）** | 玩家携带的备用弹药总量。换弹时从备弹中取出弹药填满弹匣。备弹归零则无法换弹。每把枪独立维护。 |
+| **Ammo Type（弹药类型）** | `Weapon.ammo_type`（StringName，默认 `"手枪弹"`）。同类型弹药的武器共享同一备弹池。参见 [ADR 022](docs/adr/022-enemy-weapon-expansion.md)。 |
+| **Ammo Pool（弹药池）** | 玩家备弹的存储结构（issue 09 起）：`player.ammo_reserve: Dictionary`，键为 Ammo Type、值为剩余备弹数；初始按已装备武器的 ammo_type 建键（保底含 `"手枪弹"`），每类 36 发。取代了旧的按武器独立的 `reserve: Array[int]`。 |
+| **Reserve（备弹）** | 玩家携带的备用弹药总量。换弹时从弹药池对应弹药类型中取出弹药填满弹匣；该类型备弹归零则无法换弹。同类弹药武器共享同一池。 |
 | **Magazine Size（弹匣容量）** | 单次装填能容纳的最大弹数，在 Weapon 资源中配置。不同武器可有不同弹匣容量。 |
-| **Max Reserve（最大备弹）** | 每把枪能携带的备弹上限，在 Weapon 资源中配置。 |
+| **Max Reserve（最大备弹）** | 每把枪能携带的备弹上限，在 Weapon 资源中配置；商店按行购买时以该武器上限封顶对应弹药池余量（`effective_max_reserve`，含升级 bonus）。 |
+| **Weapon Durability（武器耐久）** | `Weapon.durability_max`（≤0 为无限耐久）。玩家按 `weapon_durability: Array[int]` 与 `weapons` 同序追踪；每次成功击发 -1，归零触发武器损毁：播放 0.3s 碎裂粒子 → 从装备移除 → 自动切换下一把或进入空手状态。参见 ADR 022 / issue 09。 |
+| **Behavior Module（行为模块）** | 挂载在怪物节点下的普通子节点，按需实现 `module_setup(host)` / `on_tick(delta)` / `on_enter_state(state)` / `on_exit_state(state)` / `on_damage(amount)` / `on_death()` 即自动生效（`has_method` 检查，未实现自动跳过）。由 `monster_base._setup_modules()` 在 `_ready` 时发现。参见 ADR 022 / issue 09。 |
+| **ENEMY_CONFIG** | `run_director.gd` 的敌人配置常量表：键为怪物类型 id，条目含 `cost`（刷出成本）/ `reward`（击杀奖励）/ `min_wave`（解锁波次）/ `scene`。数据驱动刷怪，新增敌人 = 追加表条目。初始 3 种，issue 10–14 追加其余 13 种。 |
 | **Reload（换弹）** | 将备弹转移至弹匣的动作。触发方式：手动按 R 键；或弹匣归零后继续扣扳机时自动触发。需一定时间完成（换弹时间），期间不能射击。若备弹不足，只装填可用数量。换弹时同时播放武器模型动画（Tween，武器移出视野再回来）与右下角 HUD 进度条。 |
 | **Reload Time（换弹时间）** | 完成换弹动作所需的秒数，在 Weapon 资源中配置。 |
 | **Reload Animation（换弹动画）** | 换弹期间复用武器 Container 的 Tween 动画，使武器模型移出视野再归位，营造"装填"视觉。与切枪动画（initiate_change_weapon）共享 Tween 机制，但换弹期间不切换武器模型。 |

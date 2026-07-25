@@ -17,7 +17,7 @@ extends Node
 @export var rng_seed: int = 0
 ## 波次超时（秒）：到点仍未清场则强制 destroy 剩余怪物，避免卡怪软锁
 @export var wave_timeout: float = 120.0
-## 怪物场景（测试可注入假场景）
+## 怪物场景（过渡兼容：测试可注入假场景；正式刷怪以 ENEMY_CONFIG 为准，issue 09）
 @export var monster_melee_scene: PackedScene = preload("res://objects/monster_melee.tscn")
 @export var monster_ranged_scene: PackedScene = preload("res://objects/monster_ranged.tscn")
 @export var enemy_scene: PackedScene = preload("res://objects/enemy.tscn")
@@ -50,10 +50,24 @@ var alive_count: int = 0
 
 var rng: RandomNumberGenerator
 
-# === 奖励表（金币 = 经验，同值；不随波次缩放）===
-const REWARD_MELEE := 5
-const REWARD_RANGED := 8
-const REWARD_ENEMY := 10
+# === 敌人配置表（issue 09，ADR 022：数据驱动刷怪）===
+# 键为怪物类型 id；条目含刷出成本 / 击杀奖励（金币 = 经验，同值）/ 解锁波次 / 场景。
+# 初始仅 3 种；issue 10–14 向本表追加其余 13 种敌人条目。
+# 旧的 3 个 @export 场景字段保留作测试注入与过渡兼容，优先级高于本表 scene。
+const ENEMY_CONFIG: Dictionary = {
+	&"monster_melee": {
+		"cost": 5, "reward": 5, "min_wave": 1,
+		"scene": preload("res://objects/monster_melee.tscn"),
+	},
+	&"monster_ranged": {
+		"cost": 8, "reward": 8, "min_wave": 4,
+		"scene": preload("res://objects/monster_ranged.tscn"),
+	},
+	&"enemy": {
+		"cost": 10, "reward": 10, "min_wave": 7,
+		"scene": preload("res://objects/enemy.tscn"),
+	},
+}
 
 var _wave_active := false
 var _wave_elapsed := 0.0
@@ -169,9 +183,12 @@ func apply_chest_reward(reward_id: StringName) -> void:
 			add_xp(xp_bonus)  # 可能级联触发升级（issue 05）
 		&"ammo_refill":
 			if _player and is_instance_valid(_player):
+				# issue 09：备弹为按 ammo_type 共享的弹药池；同类弹药取最大上限回满
 				for i in range(_player.weapons.size()):
 					var w: Weapon = _player.weapons[i]
-					_player.reserve[i] = _player.effective_max_reserve(w)
+					var key: StringName = w.ammo_type
+					var cap: int = _player.effective_max_reserve(w)
+					_player.ammo_reserve[key] = maxi(int(_player.ammo_reserve.get(key, 0)), cap)
 				if _player.has_method("_emit_ammo_updated"):
 					_player._emit_ammo_updated()
 
@@ -247,25 +264,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("start_wave"):
 		start_next_wave()
 
-## 怪物刷出成本（分数），与奖励值一致：越强 = 越贵 = 杀它掉越多
-const MONSTER_COST := {
-	&"monster_melee": 5,
-	&"monster_ranged": 8,
-	&"enemy": 10,
-}
-
 ## 第 N 波的分数预算：60 × 1.2^(N-1)，即每波预算为上一波的 1.2 倍
 func wave_budget(wave_number: int) -> int:
 	return int(round(60.0 * pow(1.2, wave_number - 1)))
 
-## 当前波次可用的怪物类型（按波分阶段解锁，与旧规则一致）
+## 当前波次可用的怪物类型（issue 09：由 ENEMY_CONFIG 的 min_wave 驱动，
+## 与旧规则一致：1–3 仅近战、4–6 加远程、7+ 全类型）
 func _available_types(wave_number: int) -> Array[StringName]:
-	if wave_number <= 3:
-		return [&"monster_melee"]
-	elif wave_number <= 6:
-		return [&"monster_melee", &"monster_ranged"]
-	else:
-		return [&"monster_melee", &"monster_ranged", &"enemy"]
+	var out: Array[StringName] = []
+	for type in ENEMY_CONFIG:
+		if wave_number >= int(ENEMY_CONFIG[type]["min_wave"]):
+			out.append(type)
+	return out
 
 ## 分数制波次组成：从可用类型中随机选取怪物，直到总成本 >= 波次预算
 ## 使用本局 rng 保证测试可复现（固定 rng_seed）
@@ -278,7 +288,7 @@ func compute_wave_composition(wave_number: int) -> Array[StringName]:
 		var idx := rng.randi_range(0, available.size() - 1)
 		var monster_type: StringName = available[idx]
 		types.append(monster_type)
-		total_cost += MONSTER_COST[monster_type]
+		total_cost += int(ENEMY_CONFIG[monster_type]["cost"])
 	return types
 
 func _spawn_all(types: Array[StringName]) -> void:
@@ -307,7 +317,10 @@ func _shuffle_in_place(arr: Array) -> void:
 		arr[j] = tmp
 
 func _spawn_monster(type: StringName, pos: Vector3, index: int = 0) -> Node3D:
+	# 场景解析顺序：@export 注入（测试/过渡兼容）→ ENEMY_CONFIG 表（issue 09）
 	var scene: PackedScene = _monster_scenes.get(type)
+	if scene == null and ENEMY_CONFIG.has(type):
+		scene = ENEMY_CONFIG[type]["scene"]
 	if scene == null:
 		push_warning("RunDirector: 未知怪物类型 %s" % str(type))
 		return null
@@ -335,15 +348,9 @@ func _on_monster_died(monster_type: StringName, monster: Node3D) -> void:
 		_end_wave(_cleared_by_timeout)
 
 func _reward_for(type: StringName) -> int:
-	match type:
-		&"monster_melee":
-			return REWARD_MELEE
-		&"monster_ranged":
-			return REWARD_RANGED
-		&"enemy":
-			return REWARD_ENEMY
-		_:
-			return 0
+	if ENEMY_CONFIG.has(type):
+		return int(ENEMY_CONFIG[type]["reward"])
+	return 0
 
 func _end_wave(by_timeout: bool) -> void:
 	_wave_active = false
