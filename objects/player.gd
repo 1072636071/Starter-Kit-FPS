@@ -1,5 +1,8 @@
 extends CharacterBody3D
 
+# === 卡住状态机（ADR 016，issue 05）===
+enum StuckState { NORMAL, STUCK, ESCAPING }
+
 @export_subgroup("Properties")
 @export var movement_speed = 5
 @export_range(0, 100) var number_of_jumps: int = 2
@@ -84,6 +87,16 @@ var shield_regen_rate_bonus: float = 0.0
 
 var previously_floored := false
 
+# 卡住状态机（ADR 016）
+var stuck_state: StuckState = StuckState.NORMAL
+var _stuck_timer: float = 0.0          # 卡住判定累加器
+var _last_move_dir: Vector3 = Vector3.BACK  # 最后有效移动方向（缓存）
+var _escape_distance: float = 0.0       # 已推出距离
+const STUCK_DETECT_TIME := 0.5         # 卡住判定持续时间
+const STUCK_SPEED_THRESHOLD := 0.3     # 低于此速度视为无有效位移
+const ESCAPE_SPEED := 0.5              # 推回速度（m/s）
+const ESCAPE_MAX_DISTANCE := 8.0       # 推回安全上限（m）
+
 # 天空缓降：生成时从高处慢慢落下
 const DROP_HEIGHT := 10.0   # 出生点上方偏移（米）
 const DROP_SPEED := 4.0     # 缓降速度（米/秒）
@@ -107,6 +120,8 @@ signal health_updated
 signal shield_updated(shield: float, shield_max: float)
 # 玩家死亡信号（无参数，带 _dead 守卫防重复），由 Game Over UI（issue 06）监听
 signal died
+# 卡住状态变迁信号（ADR 016），供 HUD 显示/隐藏提示
+signal stuck_state_changed(new_state: StuckState)
 # 弹药 HUD 信号 —— 由 HUD 监听以渲染右下角列表与进度条
 # magazines/reserves 为当前所有武器的弹药快照（Array[int]）
 signal ammo_updated(weapon_index: int, magazines: Array, reserves: Array)
@@ -173,6 +188,35 @@ func _physics_process(delta):
 
 	handle_gravity(delta)
 
+	# === 卡住状态机处理（ADR 016）===
+	match stuck_state:
+		StuckState.STUCK:
+			# STUCK：禁止移动，等待按 G
+			movement_velocity = Vector3.ZERO
+			velocity = Vector3(0, -gravity, 0)
+			move_and_slide()
+			return
+		StuckState.ESCAPING:
+			# ESCAPING：沿进入反方向匀速推出
+			var push_dir := -_last_move_dir
+			global_position += push_dir * ESCAPE_SPEED * delta
+			_escape_distance += ESCAPE_SPEED * delta
+			# 终止判定：推出距离超限 → 强制恢复
+			if _escape_distance >= ESCAPE_MAX_DISTANCE:
+				_set_stuck_state(StuckState.NORMAL)
+			else:
+				# test_move 检测前方是否仍有碰撞
+				var result := KinematicCollision3D.new()
+				var hit := test_move(global_transform, push_dir * 0.1, result)
+				if not hit:
+					_set_stuck_state(StuckState.NORMAL)
+			# 应用重力保持贴地
+			velocity = Vector3(0, -gravity, 0)
+			move_and_slide()
+			return
+		StuckState.NORMAL:
+			pass
+
 	# Movement: 将局部输入方向转为世界方向
 	movement_velocity = transform.basis * movement_velocity
 
@@ -184,6 +228,9 @@ func _physics_process(delta):
 	# Auto-Step：在 move_and_slide 之前用 test_move 检测前方台阶并抬升
 	_try_auto_step(delta)
 	move_and_slide()
+
+	# === 卡住检测（NORMAL 状态下）===
+	_detect_stuck(delta)
 
 func _process(delta):
 	if not is_inside_tree(): return
@@ -298,6 +345,32 @@ func handle_controls(delta):
 		
 		input_mouse = Vector2.ZERO
 	
+	# === 卡住状态下的输入处理（ADR 016）===
+	if stuck_state == StuckState.STUCK:
+		# STUCK：只允许视角转动和射击，禁止移动/跳跃
+		# 按 G 触发挣扎
+		if Input.is_action_just_pressed("struggle"):
+			_start_escape()
+		# 射击仍允许
+		action_shoot()
+		# 视角转动仍允许（由 _input 处理，不在此处）
+		# 换弹/近战仍允许
+		if Input.is_action_just_pressed("reload"):
+			action_reload(weapon_index)
+		if Input.is_action_just_pressed("melee"):
+			action_melee()
+		movement_velocity = Vector3.ZERO
+		return
+	elif stuck_state == StuckState.ESCAPING:
+		# ESCAPING：只允许视角/射击/换弹/近战，不可取消
+		action_shoot()
+		if Input.is_action_just_pressed("reload"):
+			action_reload(weapon_index)
+		if Input.is_action_just_pressed("melee"):
+			action_melee()
+		movement_velocity = Vector3.ZERO
+		return
+
 	# Movement
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	
@@ -664,6 +737,9 @@ func damage(amount: float) -> void:
 	# 死亡判定：原 health < 0 改为 <= 0，避免 0 血不死
 	if health <= 0 and not _dead:
 		_dead = true
+		# 死亡优先：取消卡住/推回状态（ADR 016）
+		if stuck_state != StuckState.NORMAL:
+			_set_stuck_state(StuckState.NORMAL)
 		died.emit()
 
 # 护盾延时恢复：受击后倒计时 delay，到点每帧按 rate 回盾（不超过 max）
@@ -695,3 +771,52 @@ func effective_max_reserve(weapon: Weapon) -> int:
 static func random_vec2(_min: Vector2, _max: Vector2) -> Vector2:
 	var _sign = -1 if randi() % 2 == 0 else 1
 	return Vector2(randf_range(_min.x, _max.x), randf_range(_min.y, _max.y) * _sign)
+
+# === 卡住状态机辅助方法（ADR 016，issue 05）===
+
+# 状态变迁 + 发信号
+func _set_stuck_state(new_state: StuckState) -> void:
+	if stuck_state == new_state:
+		return
+	stuck_state = new_state
+	if new_state == StuckState.ESCAPING:
+		_escape_distance = 0.0
+	stuck_state_changed.emit(new_state)
+
+# 卡住检测：在 NORMAL 状态下每帧调用
+func _detect_stuck(delta: float) -> void:
+	# 排除条件：缓降中 / 不在地面 / 已死亡
+	if _dropping or _dead:
+		_stuck_timer = 0.0
+		return
+	if not is_on_floor():
+		_stuck_timer = 0.0
+		return
+
+	# 缓存最后有效移动方向（速度 > 0.5 时更新）
+	var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
+	if horiz_vel.length() > 0.5:
+		_last_move_dir = horiz_vel.normalized()
+
+	# 检测条件：有输入 + 速度极低
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if input.length() < 0.1:
+		# 无输入（靠墙站立）不触发
+		_stuck_timer = 0.0
+		return
+
+	if horiz_vel.length() < STUCK_SPEED_THRESHOLD:
+		_stuck_timer += delta
+		if _stuck_timer >= STUCK_DETECT_TIME:
+			_set_stuck_state(StuckState.STUCK)
+	else:
+		_stuck_timer = 0.0
+
+# 按 G 触发挣扎：STUCK → ESCAPING
+func _start_escape() -> void:
+	if stuck_state != StuckState.STUCK:
+		return
+	# 如果 _last_move_dir 为零向量（极端情况），用玩家朝向后方
+	if _last_move_dir.length() < 0.01:
+		_last_move_dir = -transform.basis.z
+	_set_stuck_state(StuckState.ESCAPING)

@@ -25,6 +25,7 @@ var _wave_number: int = 0
 @onready var _info_label: Label = _build_info_label()
 @onready var _wave_prompt: Label = _build_wave_prompt()
 @onready var _chest_prompt: Label = _build_chest_prompt()
+@onready var _stuck_prompt: Label = _build_stuck_prompt()
 
 func _ready() -> void:
 	add_child(_list)
@@ -33,6 +34,8 @@ func _ready() -> void:
 	add_child(_info_label)
 	add_child(_wave_prompt)
 	add_child(_chest_prompt)
+	# issue 05：卡住提示
+	add_child(_stuck_prompt)
 	# 延迟一帧绑定 player，确保 player._ready 已初始化 weapons 与弹药
 	call_deferred("_bind_player")
 	# issue 07：绑定 RunDirector 信号
@@ -49,6 +52,9 @@ func _bind_player() -> void:
 	player.ammo_updated.connect(_on_ammo_updated)
 	player.reload_started.connect(_on_reload_started)
 	player.reload_ended.connect(_on_reload_ended)
+	# issue 05：卡住状态信号
+	if player.has_signal("stuck_state_changed"):
+		player.stuck_state_changed.connect(_on_stuck_state_changed)
 	# 用 player 当前快照做首次渲染
 	_on_ammo_updated(player.weapon_index, player.magazine.duplicate(), player.reserve.duplicate())
 
@@ -308,3 +314,29 @@ func show_chest_prompt(show: bool) -> void:
 func show_wave_prompt(show: bool) -> void:
 	_wave_prompt.text = _wave_prompt_text()
 	_wave_prompt.visible = show
+
+# ============================================================
+# issue 05：卡住提示（ADR 016）
+# ============================================================
+
+func _build_stuck_prompt() -> Label:
+	var l := Label.new()
+	l.text = "按 G 尝试挣扎离开"
+	l.add_theme_font_size_override("font_size", 28)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.anchor_left = 0.5
+	l.anchor_right = 0.5
+	l.anchor_top = 0.7
+	l.anchor_bottom = 0.7
+	l.offset_left = -200
+	l.offset_right = 200
+	l.offset_top = -20
+	l.offset_bottom = 20
+	l.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.visible = false
+	return l
+
+func _on_stuck_state_changed(new_state) -> void:
+	# StuckState.NORMAL = 0, STUCK = 1, ESCAPING = 2
+	_stuck_prompt.visible = (new_state == 1)  # 仅 STUCK 时显示

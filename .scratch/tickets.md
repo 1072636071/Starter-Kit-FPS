@@ -20,5 +20,6 @@
 | 受击反馈 Hit Flash | `.scratch/hit-feedback/`（issues/） |
 | 玩家近战系统 | `.scratch/melee/`（PRD.md + issues/） |
 | 小地图系统 | `.scratch/minimap/`（issues/，无 PRD；ADR 007 为设计依据） |
+| 竞技场可玩性修复 | `.scratch/arena-fixes/`（PRD.md + issues/） |
 
 按**前沿**推进：任何阻塞者全部完成的工单。Triage 标签见 `docs/agents/triage-labels.md`。

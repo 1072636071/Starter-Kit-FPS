@@ -179,6 +179,19 @@
 | **start_wave / interact（输入动作）** | RunDirector 新增 `start_wave` 输入动作（建议绑定 Enter 或 F 键）用于手动开下一波；宝箱交互复用现有 `interact` 输入动作（E 键）。两键分离避免冲突——开下一波与开宝箱是两个独立动作，玩家可不开宝箱直接开下一波。 |
 | **RunDirector Public Methods（RunDirector public 方法）** | RunDirector 暴露给 issue 04（商店）/ 08（宝箱）/ 03（击杀奖励）调用的 public 方法：`add_gold(amount)`（加金币 + 累计 + 发信号）、`spend_gold(cost) -> bool`（扣金币，不足返回 false）、`add_xp(amount)`（加经验，跨阈值内部级联触发 issue 05 升级）、`add_kills(count=1)`（加击杀计数）。这些方法是金币/经验/击杀状态变更的唯一入口，避免 issue 直接改字段漏发信号。 |
 
+# 卡住与挣扎（Stuck & Struggle）
+
+参见 [ADR 016](file:///g:/work/Starter-Kit-FPS/docs/adr/016-stuck-struggle-punishment.md)。
+
+| 术语 | 定义 |
+|------|------|
+| **Stuck（卡住）** | 玩家因跳入建筑缝隙等狭窄空间，水平移动被两侧碰撞完全阻挡的状态。判定条件：在地面（`is_on_floor()`）+ 有 WASD 输入（`input.length() > 0.1`）+ 实际水平速度 < 0.3 m/s + 持续 0.5 秒。触发后进入 STUCK 状态。 |
+| **Struggle（挣扎）** | 玩家在 STUCK 状态下按 G 键触发的逃脱动作。按 G 后进入 ESCAPING 状态，沿进入方向反向匀速推出。输入动作名 `struggle`，绑定 G 键。 |
+| **Stuck State Machine（卡住状态机）** | 玩家卡住处理的三态状态机：`NORMAL`（正常）→ `STUCK`（卡住等待按 G）→ `ESCAPING`（推回中）→ `NORMAL`。STUCK 期间：禁止移动和跳跃，允许视角转动和射击，正常受伤。ESCAPING 期间：同样禁止移动/跳跃，允许视角/射击/受伤，不可取消。 |
+| **Escape Push（推回）** | ESCAPING 状态下的匀速推出行为。速度 **0.5 m/s**（正常行走的 1/10），方向为卡住前最后有效移动方向的反向（`_last_move_dir`）。终止条件：`test_move` 检测前方无碰撞（脱离夹缝）或推出距离达 8m（安全上限）。推出完毕回到 NORMAL。 |
+| **Stuck UI Prompt（卡住提示）** | STUCK 状态时屏幕中下方显示的文字提示："按 G 尝试挣扎离开"。进入 STUCK 时显示，按 G 进入 ESCAPING 或回到 NORMAL 时隐藏。 |
+| **_last_move_dir（最后移动方向）** | 玩家正常移动时持续缓存的水平速度归一化方向（`Vector3`，y=0）。卡住触发时冻结该值，作为推回方向的依据（取反）。 |
+
 ## 场景文件约定（Scene File Conventions）
 
 | 约定 | 说明 |

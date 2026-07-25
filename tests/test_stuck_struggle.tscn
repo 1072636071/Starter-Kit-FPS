@@ -1,0 +1,32 @@
+[gd_scene format=3 uid="uid://bteststuckstruggle05"]
+
+[ext_resource type="Script" path="res://tests/test_stuck_struggle.gd" id="1_test"]
+[ext_resource type="PackedScene" uid="uid://dl2ed4gkybggf" path="res://objects/player.tscn" id="2_player"]
+
+[sub_resource type="WorldBoundaryShape3D" id="WorldBoundaryShape3D_ground"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall"]
+size = Vector3(0.1, 2.0, 4.0)
+
+[node name="TestStuckStruggle" type="Node3D"]
+script = ExtResource("1_test")
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="GroundCol" type="CollisionShape3D" parent="Ground"]
+shape = SubResource("WorldBoundaryShape3D_ground")
+
+[node name="WallLeft" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 1, 0)
+
+[node name="WallLeftCol" type="CollisionShape3D" parent="WallLeft"]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="WallRight" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 1, 0)
+
+[node name="WallRightCol" type="CollisionShape3D" parent="WallRight"]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
