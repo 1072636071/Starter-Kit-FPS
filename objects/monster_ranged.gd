@@ -81,7 +81,8 @@ func _evaluate_transitions() -> void:
 
 	match _ai_state:
 		AIState.IDLE:
-			if distance < chase_range and _has_los:
+			# IDLE → CHASE：只用距离触发，不要求视线
+			if distance < chase_range:
 				_change_state(AIState.CHASE)
 		AIState.CHASE:
 			if not _has_los:

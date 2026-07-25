@@ -184,7 +184,7 @@ func _update_los() -> void:
 	var space_state := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.exclude = [get_rid()]
-	query.collision_mask = 0xFFFFFFFF  # 检测所有层
+	query.collision_mask = 1  # 只检测地形（layer 1），不被其他怪物挡视线
 	var result := space_state.intersect_ray(query)
 	if result:
 		var collider = result["collider"]
@@ -206,7 +206,8 @@ func _evaluate_transitions() -> void:
 
 	match _ai_state:
 		AIState.IDLE:
-			if distance < chase_range and _has_los:
+			# IDLE → CHASE：只用距离触发，不要求视线（竞技场设计：怪物感知到玩家就追）
+			if distance < chase_range:
 				_change_state(AIState.CHASE)
 		AIState.CHASE:
 			if not _has_los:
