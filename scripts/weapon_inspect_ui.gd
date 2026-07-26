@@ -1,5 +1,5 @@
 extends Control
-## 武器检视 UI（ADR 022 配套）
+## 武器检视 UI（ADR 022 配套，UI 现代化 issue 05）
 ##
 ## 按 TAB 打开，显示所有 3 个武器槽的完整属性面板：
 ##   - 伤害 / DPS / 射速(RPM) / 精度 / 弹匣 / 备弹 / 换弹
@@ -9,39 +9,59 @@ extends Control
 ## 对比功能：点击一张武器卡片将其"固定为参考"——
 ##   其他卡片会显示相对参考的差异（▲ 更优 / ▼ 更差）。
 ##   再次点击已固定的卡片取消对比。
+##
+## UI 现代化：引用 UITheme token 取代硬编码颜色，标题加 gun 图标，
+## 打开/关闭过渡使用 UIMotion.tween_modal_in/out。
 
 signal closed
 
-const CARD_BG := Color(0.08, 0.08, 0.13, 0.94)
-const CARD_BORDER_CURRENT := Color(0.9, 0.7, 0.2, 1.0)   # 当前武器金边
-const CARD_BORDER_NORMAL := Color(0.25, 0.25, 0.35, 0.7)
-const CARD_BORDER_PINNED := Color(0.4, 0.8, 1.0, 1.0)     # 对比参考蓝边
-const STAT_LABEL_COLOR := Color(0.6, 0.6, 0.65)
-const STAT_VALUE_COLOR := Color(0.95, 0.95, 0.95)
-const BETTER_COLOR := Color(0.25, 0.85, 0.3)
-const WORSE_COLOR := Color(0.9, 0.35, 0.3)
-const STAR_COLOR := Color(0.95, 0.75, 0.2)
-const EMPTY_STAR_COLOR := Color(0.3, 0.3, 0.3)
-const BAR_BG := Color(0.12, 0.12, 0.18)
+## 卡片背景（UITheme token，半透明叠加 alpha）
+const CARD_BG := Color(0.10196, 0.13333, 0.18824, 0.94)
+## 当前武器金边（暂用 COLOR_ACCENT_WARNING 作金色替代）
+const CARD_BORDER_CURRENT := UITheme.COLOR_ACCENT_WARNING
+const CARD_BORDER_NORMAL := UITheme.COLOR_BG_PANEL_RAISED
+## pinned 参考蓝边
+const CARD_BORDER_PINNED := UITheme.COLOR_ACCENT_PRIMARY
+const STAT_LABEL_COLOR := UITheme.COLOR_TEXT_SECONDARY
+const STAT_VALUE_COLOR := UITheme.COLOR_TEXT_PRIMARY
+const BETTER_COLOR := UITheme.COLOR_ACCENT_PRIMARY
+const WORSE_COLOR := UITheme.COLOR_ACCENT_DANGER
+const STAR_COLOR := UITheme.COLOR_ACCENT_WARNING
+const EMPTY_STAR_COLOR := UITheme.COLOR_TEXT_SECONDARY
+const BAR_BG := UITheme.COLOR_BG_PANEL
+const PRICE_COLOR := UITheme.COLOR_ACCENT_WARNING
+const AMMO_TYPE_COLOR := UITheme.COLOR_ACCENT_PRIMARY
 
 var _player: Node3D
 var _open := false
 var _pinned_index := -1  # 对比参考槽位，-1 = 无
 var _card_panels: Array[PanelContainer] = []
 var _card_content_refs: Array[Dictionary] = []  # 每张卡的可更新子节点引用
+var _close_tween: Tween = null
 
 @onready var _bg: ColorRect = _build_bg()
 
 func _ready() -> void:
-	# 暂停期间不可交互（武器检视只在游戏进行中可用）
-	process_mode = Node.PROCESS_MODE_PAUSABLE
+	# 使用 ALWAYS 以便 _on_process_frame 能在暂停时检测并自动关闭 UI
+	# （_unhandled_input 由 _open 标志门控，关闭后即不再响应输入）
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_bg)
+	# 连接到 process_frame 信号（暂停期间也会发射），用于检测暂停并自动关闭
+	if not get_tree().process_frame.is_connected(_on_process_frame):
+		get_tree().process_frame.connect(_on_process_frame)
+
+## SceneTree.process_frame 回调：暂停期间自动关闭武器检视 UI
+## （process_frame 信号在暂停期间也会发射，比 _process 更可靠）
+func _on_process_frame() -> void:
+	if _open and get_tree().paused:
+		close()
 
 func _build_bg() -> ColorRect:
 	var r := ColorRect.new()
-	r.color = Color(0, 0, 0, 0.75)
+	# bg_base 75% alpha
+	r.color = Color(UITheme.COLOR_BG_BASE.r, UITheme.COLOR_BG_BASE.g, UITheme.COLOR_BG_BASE.b, 0.75)
 	r.anchor_left = 0.0
 	r.anchor_top = 0.0
 	r.anchor_right = 1.0
@@ -65,21 +85,21 @@ func open(player: Node3D) -> void:
 	_build_ui()
 	visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# 打开过渡动效（issue 05）
+	UIMotion.tween_modal_in(self)
 
 func close() -> void:
 	if not _open:
 		return
 	_open = false
+	# 关闭过渡动效（issue 05）；visible 立即设为 false 保持原有 API 契约
+	# （测试与外部调用方依赖 close() 后 visible == false）
+	UIMotion.tween_modal_out(self)
 	visible = false
 	# 仅当游戏未暂停时才恢复鼠标捕获（其他 UI 如 shop/levelup 会在暂停打开时自行设置鼠标）
 	if not get_tree().paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	closed.emit()
-
-func _process(_delta: float) -> void:
-	# 若游戏被其他 UI（商店/升级/死亡）暂停，自动关闭武器检视
-	if _open and get_tree().paused:
-		close()
 
 # ============================================================
 # 整体布局构建
@@ -99,30 +119,25 @@ func _build_ui() -> void:
 	root.anchor_right = 0.95
 	root.anchor_bottom = 0.92
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_theme_constant_override("separation", 16)
+	root.add_theme_constant_override("separation", UITheme.SPACING_LG)
 	add_child(root)
 
-	# 标题
-	var title := Label.new()
-	title.text = "武器检视  |  TAB 关闭  |  点击卡片对比"
-	title.add_theme_font_size_override("font_size", 26)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(title)
+	# 标题栏：gun 图标 + "武器检视"
+	root.add_child(_build_title_bar())
 
 	# 卡片区域
 	var cards_row := HBoxContainer.new()
 	cards_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	cards_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cards_row.add_theme_constant_override("separation", 20)
+	cards_row.add_theme_constant_override("separation", UITheme.SPACING_XL)
 	root.add_child(cards_row)
 	cards_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# 提示
 	var hint := Label.new()
 	hint.text = "按 Q / 滚轮 切换武器  |  按 X 丢弃当前武器"
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	hint.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_SM)
+	hint.add_theme_color_override("font_color", UITheme.COLOR_TEXT_SECONDARY)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hint)
@@ -132,6 +147,34 @@ func _build_ui() -> void:
 	for i in range(3):
 		var card := _build_weapon_card(i, slot_count)
 		cards_row.add_child(card)
+
+## 标题栏：gun 图标 + 文字 + 关闭提示
+func _build_title_bar() -> Control:
+	var bar := HBoxContainer.new()
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bar.add_theme_constant_override("separation", UITheme.SPACING_SM)
+
+	# gun 图标
+	var icon := TextureRect.new()
+	icon.texture = UITheme.get_icon(UITheme.ICON_GUN)
+	icon.custom_minimum_size = Vector2(UITheme.FONT_SIZE_XL, UITheme.FONT_SIZE_XL)
+	icon.expand_mode = TextureRect.EXPAND_KEEP_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.modulate = UITheme.COLOR_ACCENT_PRIMARY
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(icon)
+
+	# 标题文字
+	var title := Label.new()
+	title.text = "武器检视  |  TAB 关闭  |  点击卡片对比"
+	title.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_XL)
+	title.add_theme_color_override("font_color", UITheme.COLOR_TEXT_PRIMARY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(title)
+
+	return bar
 
 # ============================================================
 # 单张武器卡片
@@ -151,8 +194,8 @@ func _build_weapon_card(slot: int, slot_count: int) -> PanelContainer:
 	sb.corner_radius_top_right = 8
 	sb.corner_radius_bottom_left = 8
 	sb.corner_radius_bottom_right = 8
-	sb.content_margin_left = 16
-	sb.content_margin_right = 16
+	sb.content_margin_left = UITheme.SPACING_LG
+	sb.content_margin_right = UITheme.SPACING_LG
 	sb.content_margin_top = 14
 	sb.content_margin_bottom = 14
 	panel.add_theme_stylebox_override("panel", sb)
@@ -182,16 +225,16 @@ func _build_weapon_card(slot: int, slot_count: int) -> PanelContainer:
 func _build_empty_card(content: VBoxContainer, _refs: Dictionary) -> void:
 	var label := Label.new()
 	label.text = "（空槽）"
-	label.add_theme_font_size_override("font_size", 20)
-	label.add_theme_color_override("font_color", Color(0.35, 0.35, 0.4))
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_MD)
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT_SECONDARY)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(label)
 
 	var hint := Label.new()
 	hint.text = "商店购买或\n地面拾取获得"
-	hint.add_theme_font_size_override("font_size", 14)
-	hint.add_theme_color_override("font_color", Color(0.3, 0.3, 0.35))
+	hint.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_SM)
+	hint.add_theme_color_override("font_color", UITheme.COLOR_TEXT_SECONDARY)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(hint)
@@ -202,8 +245,8 @@ func _build_filled_card(content: VBoxContainer, refs: Dictionary, slot: int) -> 
 	# ── 武器名 ──
 	var name_lbl := Label.new()
 	name_lbl.text = w.display_name
-	name_lbl.add_theme_font_size_override("font_size", 22)
-	name_lbl.add_theme_color_override("font_color", Color(1, 1, 1))
+	name_lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_LG)
+	name_lbl.add_theme_color_override("font_color", UITheme.COLOR_TEXT_PRIMARY)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(name_lbl)
@@ -213,7 +256,7 @@ func _build_filled_card(content: VBoxContainer, refs: Dictionary, slot: int) -> 
 	var role_lbl := Label.new()
 	role_lbl.text = role_str
 	role_lbl.add_theme_font_size_override("font_size", 15)
-	role_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	role_lbl.add_theme_color_override("font_color", UITheme.COLOR_TEXT_SECONDARY)
 	role_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	role_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(role_lbl)
@@ -222,7 +265,7 @@ func _build_filled_card(content: VBoxContainer, refs: Dictionary, slot: int) -> 
 	_add_separator(content)
 
 	# ── 弹药类型 ──
-	refs["ammo_type"] = _add_stat_row(content, "弹药", _ammo_display(w), STAT_LABEL_COLOR, Color(0.5, 0.7, 0.9))
+	refs["ammo_type"] = _add_stat_row(content, "弹药", _ammo_display(w), STAT_LABEL_COLOR, AMMO_TYPE_COLOR)
 
 	# ── DPS ──
 	var dps_val := _calc_dps(w)
@@ -255,14 +298,14 @@ func _build_filled_card(content: VBoxContainer, refs: Dictionary, slot: int) -> 
 	refs["durability_val"] = w.durability_max
 
 	# ── 售价 ──
-	refs["price"] = _add_stat_row(content, "售价", "%d 金" % w.weapon_cost, STAT_LABEL_COLOR, Color(1, 0.85, 0.3))
+	refs["price"] = _add_stat_row(content, "售价", "%d 金" % w.weapon_cost, STAT_LABEL_COLOR, PRICE_COLOR)
 
 	# ── 当前武器标记 ──
 	if slot == _player.weapon_index:
 		var current_mark := Label.new()
 		current_mark.text = "◆ 当前装备"
-		current_mark.add_theme_font_size_override("font_size", 14)
-		current_mark.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
+		current_mark.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_SM)
+		current_mark.add_theme_color_override("font_color", PRICE_COLOR)
 		current_mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		current_mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		content.add_child(current_mark)
@@ -283,7 +326,7 @@ func _add_stat_row(parent: Control, label_text: String, value_text: String, labe
 
 	var lbl := Label.new()
 	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_SM)
 	lbl.add_theme_color_override("font_color", label_color)
 	lbl.custom_minimum_size = Vector2(64, 0)
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -306,7 +349,7 @@ func _add_stat_bar(parent: Control, label_text: String, value_text: String, fill
 
 	var lbl := Label.new()
 	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_SM)
 	lbl.add_theme_color_override("font_color", STAT_LABEL_COLOR)
 	lbl.custom_minimum_size = Vector2(64, 0)
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE

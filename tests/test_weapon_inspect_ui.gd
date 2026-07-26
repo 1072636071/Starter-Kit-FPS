@@ -7,12 +7,50 @@ extends Node
 ## - .tres 身份字段正确显示
 ## - 交互流程正常
 ## - 边界情况处理正确
+##
+## 运行：godot --headless --path . res://tests/test_weapon_inspect_ui.tscn --quit-after 300
+## 判定：[TEST] ALL PASSED 表示通过；任何 [TEST] FAIL 行表示失败
 
 var _ui: Control
 var _player: Node3D
 var _weapon_a: Resource
 var _weapon_b: Resource
 var _weapon_c: Resource
+var _failures: int = 0
+
+func _ready() -> void:
+	call_deferred("_run_all_tests")
+
+## 最小化 GUT 风格断言桩（项目未安装 GUT）
+func assert_true(cond: bool, msg: String) -> void:
+	if cond:
+		print("[TEST] ok: ", msg)
+	else:
+		print("[TEST] FAIL: ", msg)
+		_failures += 1
+
+func assert_false(cond: bool, msg: String) -> void:
+	assert_true(not cond, msg)
+
+func assert_eq(a, b, msg: String) -> void:
+	assert_true(a == b, "%s (got %s, expected %s)" % [msg, str(a), str(b)])
+
+func assert_gt(a, b, msg: String) -> void:
+	assert_true(a > b, "%s (got %s, expected > %s)" % [msg, str(a), str(b)])
+
+## 自动扫描所有 test_* 方法并依次运行，每个测试前后调用 before_each / after_each
+func _run_all_tests() -> void:
+	var methods := get_method_list()
+	for m in methods:
+		var mname: String = m.name
+		if mname.begins_with("test_"):
+			before_each()
+			await call(mname)
+			after_each()
+	if _failures == 0:
+		print("[TEST] ALL PASSED")
+	else:
+		print("[TEST] %d FAILURES" % _failures)
 
 func before_each() -> void:
 	# 构造 2 把 mock 武器
@@ -46,14 +84,19 @@ func before_each() -> void:
 	_weapon_b.max_reserve = 24
 	_weapon_b.reload_time = 2.0
 
-	# 构造 player
-	_player = Node3D.new()
+	# 构造 player（player.gd extends CharacterBody3D）
+	_player = CharacterBody3D.new()
 	_player.set_script(load("res://objects/player.gd"))
-	_player.weapons = [_weapon_a, _weapon_b]
+	# weapons 为 Array[Weapon] 强类型，需显式构造
+	var weapons_arr: Array[Weapon] = [_weapon_a, _weapon_b]
+	_player.weapons = weapons_arr
 	_player.weapon_index = 0
-	_player.magazine = [_weapon_a.magazine_size, _weapon_b.magazine_size]
+	# magazine / weapon_durability 为 Array[int] 强类型
+	var mag_arr: Array[int] = [_weapon_a.magazine_size, _weapon_b.magazine_size]
+	_player.magazine = mag_arr
 	_player.ammo_reserve = {&"手枪弹": 36, &"步枪弹": 24}
-	_player.weapon_durability = [_weapon_a.durability_max, _weapon_b.durability_max]
+	var dur_arr: Array[int] = [_weapon_a.durability_max, _weapon_b.durability_max]
+	_player.weapon_durability = dur_arr
 	_player.weapon = _weapon_a
 	add_child(_player)
 
@@ -76,14 +119,14 @@ func test_open_shows_correct_card_count() -> void:
 	assert_true(_ui.visible, "打开后 UI 应可见")
 	# 玩家有 2 把枪，应有 2 张填充卡片 + 1 张空槽卡片
 	# (3 张卡片总共)
-	var panels := _ui._card_panels
+	var panels = _ui._card_panels
 	assert_eq(panels.size(), 3, "应显示 3 张卡片")
 
 
 func test_current_weapon_has_gold_border() -> void:
 	_ui.open(_player)
 	# 槽位 0 是当前武器，应高亮
-	var panels := _ui._card_panels
+	var panels = _ui._card_panels
 	assert_gt(panels.size(), 0, "至少应有卡片")
 	# 边框检查：card 0 应为当前武器边框（金色）
 	# 验证 _pinned_index 为 -1（非对比模式）
@@ -143,9 +186,9 @@ func test_auto_close_on_pause() -> void:
 
 
 func test_dps_calculation() -> void:
-	var dps_a := _ui._calc_dps(_weapon_a)  # 20 / 0.2 = 100
+	var dps_a = _ui._calc_dps(_weapon_a)  # 20 / 0.2 = 100
 	assert_true(dps_a > 90.0 and dps_a < 110.0, "DPS A 应在合理范围")
-	var dps_b := _ui._calc_dps(_weapon_b)  # 35 / 0.8 = 43.75
+	var dps_b = _ui._calc_dps(_weapon_b)  # 35 / 0.8 = 43.75
 	assert_true(dps_b > 40.0 and dps_b < 50.0, "DPS B 应在合理范围")
 
 
@@ -157,11 +200,11 @@ func test_ammo_display_uses_ammo_reserve() -> void:
 
 
 func test_reliability_stars_display() -> void:
-	var stars_1 := _ui._reliability_stars(1)
+	var stars_1 = _ui._reliability_stars(1)
 	assert_true(stars_1 == "★☆☆", "1 星应为 ★☆☆")
-	var stars_2 := _ui._reliability_stars(2)
+	var stars_2 = _ui._reliability_stars(2)
 	assert_true(stars_2 == "★★☆", "2 星应为 ★★☆")
-	var stars_3 := _ui._reliability_stars(3)
+	var stars_3 = _ui._reliability_stars(3)
 	assert_true(stars_3 == "★★★", "3 星应为 ★★★")
 
 
@@ -178,9 +221,9 @@ func test_accuracy_label() -> void:
 
 
 func test_bar_color_for_durability() -> void:
-	var c_high := _ui._bar_color_for_durability(250)
+	var c_high = _ui._bar_color_for_durability(250)
 	assert_eq(c_high, Color(0.25, 0.85, 0.3), "高耐久 → 绿色")
-	var c_med := _ui._bar_color_for_durability(150)
+	var c_med = _ui._bar_color_for_durability(150)
 	assert_eq(c_med, Color(0.85, 0.75, 0.2), "中耐久 → 黄色")
-	var c_low := _ui._bar_color_for_durability(50)
+	var c_low = _ui._bar_color_for_durability(50)
 	assert_eq(c_low, Color(0.85, 0.35, 0.2), "低耐久 → 红色")

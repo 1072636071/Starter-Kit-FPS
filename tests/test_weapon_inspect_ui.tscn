@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://7dy6nu2ii04s"]
 
+[ext_resource type="Script" path="res://tests/test_weapon_inspect_ui.gd" id="1_test_script"]
+
 [node name="TestWeaponInspectUI" type="Node"]
 script = ExtResource("1_test_script")
-
-[ext_resource type="Script" path="res://tests/test_weapon_inspect_ui.gd" id="1_test_script"]
