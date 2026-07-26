@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://test_ui_theme_scene"]
+
+[ext_resource type="Script" path="res://tests/test_ui_theme.gd" id="1_test"]
+
+[node name="TestUITheme" type="Node3D"]
+script = ExtResource("1_test")

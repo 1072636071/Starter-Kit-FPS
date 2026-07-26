@@ -42,6 +42,7 @@
 | 术语 | 定义 |
 |------|------|
 | **Knockback（后坐力）** | 武器开火时施加给玩家的反冲力，包含三个分量：相机垂直旋转（knockback.x，枪口上跳）、相机水平旋转（knockback.y，随机左右偏转）、以及武器模型位置回弹和玩家移动速度反冲。值越大后坐力越强。Blaster=20, Blaster-Repeater=5。 |
+| **Recoil Recovery（后坐力自动恢复）** | 停止射击后，被后坐力推偏的相机角度**自动回弹**到射击前原始瞄准点的行为。恢复由武器参数控制（速度、延迟、缓动曲线）。与纯视觉后坐（相机不动武器动）和纯真实后坐（永不恢复）不同——折中方案：有真实后坐的重量感但不惩罚普通玩家。参见 [ADR 028](docs/adr/028-recoil-auto-recovery.md)。 |
 | **Spread（散布）** | 弹体发射方向相对准星中心的随机偏转角，以武器资源的 `spread` 属性配置。散布角度 = randf_range(-spread, spread) * 0.02，作用在相机基向量上。值越大精度越低。 |
 | **ADS（瞄准）** | Aim Down Sights，右键瞄准状态。进入 ADS 时：FOV 从默认 75° 缩小至 60°（视觉变焦）、武器散布减半（精度翻倍）、玩家移动速度减慢 30%。持续按住右键维持 ADS，松开退出。 |
 | **Enemy Spread（敌人散布）** | 敌人射击时的弹道偏转。两个敌人类（Enemy、MonsterRanged）均有 `export var enemy_spread: float` 可配置属性，默认值 0.08。实际散布随目标距离线性增大：`effective_spread = enemy_spread * distance_factor`，模拟远距离精度下降。 |
@@ -362,5 +363,22 @@
 | **UID 变更须同步引用** | 若确需变更某场景 UID，必须全项目搜索旧 UID 并同步更新所有 `ext_resource` 引用（`git grep "<旧UID>" -- "*.tscn"`）。 |
 | **load_steps 可省略** | `gd_scene` 头的 `load_steps=N` 为可选元数据，Godot 加载时自动计算。省略不影响功能，编辑器重保存时可能自动移除。 |
 | **测试场景 UID** | 测试场景（`tests/`）同样使用语义 UID：`btest` + 功能名 + issue 编号，如 `btestshop04station`。 |
+
+## UI 设计系统（UI Design System）
+
+参见 [ADR 027](file:///g:/work/Starter-Kit-FPS/docs/adr/027-ui-modernization-design-system.md)。
+
+| 术语 | 定义 |
+|------|------|
+| **UITheme（UI 主题资源）** | `assets/ui.theme` Godot Theme 资源，集中管理所有 UI 的配色/字体/StyleBox/字号阶/间距常量。所有 UI 脚本通过 `add_theme_*_override` 或直接采用默认 theme 引用，取代硬编码 `Color(...)`。配套 `scripts/ui_theme.gd` 静态访问器（`class_name UITheme`）在脚本侧暴露 Color/字号/间距常量（如 `UITheme.COLOR_ACCENT_PRIMARY`）与 `get_theme() -> Theme` 缓存方法。 |
+| **Color Token（颜色令牌）** | UITheme 中定义的 8 个命名颜色常量：`bg_base #0E1419`（屏幕底层）/ `bg_panel #1A2230`（面板背景）/ `bg_panel_raised #252D3F`（高亮面板/hover）/ `accent_primary #00E0C8`（主色：友方/能量/护盾/当前武器）/ `accent_warning #FF7A45`（警告：换弹/低耐久/冷却）/ `accent_danger #FF4655`（危险：低血/空弹/敌方）/ `text_primary #E8EAED`（主文字）/ `text_secondary #8B95A5`（次文字）。Valorant 青紫红方案，与已有 VFX 配色（青白玩家剑弧 / 红橙敌人剑弧）天然兼容。 |
+| **UIMotion（动效工具）** | `scripts/ui_motion.gd` 静态工具类（`class_name UIMotion`），提供 HUD/Modal 统一动效：`tween_in(control)` / `tween_out(control)`（120ms 滑入/滑出 + fade）、`tween_modal_in(control)` / `tween_modal_out(control)`（180ms scale 0.96↔1.0 + fade）、`tween_value(label, from, to, duration)`（数值缓动）、`pulse_glow(control, color, period)`（循环脉冲警示）。全部使用 `TRANS_CUBIC + EASE_OUT`，**不使用** spring/elastic/bounce（战术风=严肃=无弹性）。 |
+| **UICard（共享卡片组件）** | `scripts/ui_card.gd` 共享卡片组件（`class_name UICard`，继承 PanelContainer），供升级三选一（`level_up.gd`）/ 宝箱三选一（`chest_ui.gd`）/ 武器检视三卡（`weapon_inspect_ui.gd`）复用。构造 `_init(title, description, icon, accent)`，提供 `set_pinned(is_pinned)`（对比参考高亮）与 `set_delta(label, is_better)`（▲/▼ 差异指示）。取代三个 modal 各自手写 Button 卡片的重复实现。 |
+| **Lucide Icons（图标库）** | MIT 许可的现代扁平 SVG 图标库，存于 `assets/icons/`，替代所有 emoji（🪙⚡💥●◆▬）。11 个图标：`coins.svg`（货币）/ `zap.svg`（EMP）/ `flame.svg`（破片手雷）/ `heart.svg`（血量）/ `shield.svg`（护盾）/ `chevron-up.svg`（屏外敌人指示）/ `crosshair.svg`（准星/瞄准）/ `package.svg`（背包/宝箱）/ `key.svg`（按键说明）/ `sword.svg`（近战）/ `gun.svg`（武器检视）。Godot 4 导入 SVG 为 `Texture2D`，通过 `modulate` 着色适配主题。 |
+| **Rajdhani（显示字体）** | OFL 许可的方形几何无衬线字体，作为 UI 的 display + body 主字体。多字重（Light/Medium/SemiBold/Bold）支持标题与正文对比。Valorant Tungsten 字体的免费 OFL 替代，符合战术写实风。存于 `assets/fonts/`。中文回退到 Godot 自带 Noto Sans CJK（Rajdhani 缺中文字形）。 |
+| **JetBrains Mono（等宽数字字体）** | OFL 许可的等宽 tabular 字体，用于弹药数/货币/倒计时等需要对齐的数字。存于 `assets/fonts/`。与 Rajdhani 配套使用：标题与正文用 Rajdhani，数字用 JetBrains Mono。 |
+| **Canvas Items Stretch（画布拉伸模式）** | `project.godot` 的 `window/stretch/mode = "canvas_items"` + `aspect = "expand"` 配置，使 UI 控件随视口尺寸自适应缩放。取代原 1280×720 硬编码像素坐标，支持 1080p/1440p/4K 多分辨率。HUD 元件重构为 `MarginContainer` + `VBoxContainer/HBoxContainer` 锚点布局，移除所有 `offset_left = -220` 等绝对像素硬编码。 |
+| **Tactical Realism Style（战术写实风）** | UI 视觉风格锚点，对标 Valorant / CS2 / 使命召唤。特征：低饱和深色底、细字重无衬线、青紫橙红高亮、信息密度高、几乎无装饰、cubic ease-out 动效（无弹性）。与 FPS 严肃射击题材贴合，与已有 VFX 配色天然兼容。被否决的替代：科幻发光风（Cyberpunk/Halo）、卡通扁平风（糖豆人）、暗黑哥特风（艾尔登法环）。 |
+| **UI Modernization Phases（UI 现代化四阶段）** | UI 重构的 4 阶段递进计划（[ADR 027](file:///g:/work/Starter-Kit-FPS/docs/adr/027-ui-modernization-design-system.md)）：Phase 1 基础设施（theme/字体/图标/动效工具，issue 01）/ Phase 2 HUD 现代化（issue 02）/ Phase 3 Modal 屏幕现代化（issue 03）/ Phase 4 测试与文档（issue 04）。每阶段独立可验收，分别对应 `.scratch/ui-modernization/issues/01-04`。 |
 
 

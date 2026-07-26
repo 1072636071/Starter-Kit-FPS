@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://test_ui_motion_scene"]
+
+[ext_resource type="Script" path="res://tests/test_ui_motion.gd" id="1_test"]
+
+[node name="TestUIMotion" type="Node3D"]
+script = ExtResource("1_test")

@@ -1,0 +1,105 @@
+[gd_resource type="Theme" load_steps=8 format=3 uid="uid://ui_theme_modern"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel_bg"]
+bg_color = Color(0.10196, 0.13333, 0.18824, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_left = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_normal"]
+bg_color = Color(0.10196, 0.13333, 0.18824, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.14510, 0.17647, 0.24706, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_left = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_hover"]
+bg_color = Color(0.14510, 0.17647, 0.24706, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0, 0.87843, 0.78431, 0.5)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_left = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_pressed"]
+bg_color = Color(0.05490, 0.07843, 0.09804, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0, 0.87843, 0.78431, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_left = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_progress_fill"]
+bg_color = Color(0, 0.87843, 0.78431, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_left = 2
+corner_radius_bottom_right = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_progress_bg"]
+bg_color = Color(0.10196, 0.13333, 0.18824, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_left = 2
+corner_radius_bottom_right = 2
+
+[resource]
+;; ── Color tokens (8) ──────────────────────────────────
+;;    bg_base           #0E1419 — 屏幕最底层背景
+;;    bg_panel          #1A2230 — 面板/卡片背景
+;;    bg_panel_raised   #252D3F — 高亮面板/hover 态
+;;    accent_primary    #00E0C8 — 主色：友方/能量/护盾
+;;    accent_warning    #FF7A45 — 警告：换弹/低耐久/冷却
+;;    accent_danger     #FF4655 — 危险：低血/空弹/敌方
+;;    text_primary      #E8EAED — 主文字（标题/数值）
+;;    text_secondary    #8B95A5 — 次文字（标签/说明）
+bg_base = Color(0.05490, 0.07843, 0.09804, 1)
+bg_panel = Color(0.10196, 0.13333, 0.18824, 1)
+bg_panel_raised = Color(0.14510, 0.17647, 0.24706, 1)
+accent_primary = Color(0, 0.87843, 0.78431, 1)
+accent_warning = Color(1, 0.47843, 0.27059, 1)
+accent_danger = Color(1, 0.27451, 0.33333, 1)
+text_primary = Color(0.90980, 0.91765, 0.92941, 1)
+text_secondary = Color(0.54510, 0.58431, 0.64706, 1)
+
+;; ── Font sizes (7) ────────────────────────────────────
+;;    12 / 14 / 18 / 22 / 28 / 36 / 48
+DefaultFontSize = 14
+font_size_xs = 12
+font_size_sm = 14
+font_size_md = 18
+font_size_lg = 22
+font_size_xl = 28
+font_size_2xl = 36
+font_size_3xl = 48
+
+;; ── Spacing constants (6) ─────────────────────────────
+;;    4 / 8 / 12 / 16 / 24 / 32
+spacing_xs = 4
+spacing_sm = 8
+spacing_md = 12
+spacing_lg = 16
+spacing_xl = 24
+spacing_2xl = 32
+
+;; ── StyleBox references ───────────────────────────────
+panel_bg = SubResource("StyleBoxFlat_panel_bg")
+button_normal = SubResource("StyleBoxFlat_button_normal")
+button_hover = SubResource("StyleBoxFlat_button_hover")
+button_pressed = SubResource("StyleBoxFlat_button_pressed")
+progress_fill = SubResource("StyleBoxFlat_progress_fill")
+progress_bg = SubResource("StyleBoxFlat_progress_bg")
