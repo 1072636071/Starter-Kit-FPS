@@ -1,15 +1,17 @@
 extends Control
 ## issue 05：升级三选一 UI（ADR 011 / 015）
+## issue 03：重构为 UICard 组件 + UITheme token + UIMotion 过渡动效
 ##
-## 监听 RunDirector.level_up_offered(choices) → 显示 3 张升级卡（名称 + 描述）。
+## 监听 RunDirector.level_up_offered(choices) → 显示 3 张升级卡（UICard）。
 ## 玩家点 1 → 调用 run_director.apply_upgrade(id) → 隐藏 UI。
 ## process_mode = WHEN_PAUSED（暂停期间可点击）；mouse mode 在显示/隐藏时切换。
 ##
 ## RunDirector 负责暂停/恢复，本 UI 只负责展示与回传选择。
 
 var _run_director: Node
-var _card_buttons: Array = []  # Array[Button]
+var _cards: Array = []  # Array[UICard]
 var _choices: Array = []
+var _is_closing := false  # 防止 fade-out 期间重复触发
 
 @onready var _title: Label = _build_title()
 @onready var _card_container: HBoxContainer = _build_card_container()
@@ -42,7 +44,8 @@ func _bind_run_director() -> void:
 func _build_title() -> Label:
 	var label := Label.new()
 	label.text = "升级！选择一项"
-	label.add_theme_font_size_override("font_size", 36)
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_2XL)
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT_PRIMARY)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.anchor_left = 0.5
 	label.anchor_right = 0.5
@@ -59,6 +62,7 @@ func _build_title() -> Label:
 func _build_card_container() -> HBoxContainer:
 	var hbox := HBoxContainer.new()
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_theme_constant_override("separation", UITheme.SPACING_LG)
 	hbox.anchor_left = 0.5
 	hbox.anchor_right = 0.5
 	hbox.anchor_top = 0.5
@@ -77,28 +81,51 @@ func _on_level_up_offered(choices: Array) -> void:
 	_show_cards(choices)
 	visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# Modal 打开过渡：scale 0.96→1.0 + fade-in（180ms）
+	UIMotion.tween_modal_in(self)
 
 func _show_cards(choices: Array) -> void:
 	# 清空旧卡
 	for c in _card_container.get_children():
 		c.queue_free()
-	_card_buttons.clear()
+	_cards.clear()
 	for choice in choices:
-		var btn := Button.new()
-		btn.text = "%s\n\n%s" % [str(choice.get("name", "")), str(choice.get("desc", ""))]
-		btn.custom_minimum_size = Vector2(220, 280)
-		btn.add_theme_font_size_override("font_size", 20)
-		btn.alignment = HORIZONTAL_ALIGNMENT_CENTER
-		btn.pressed.connect(_on_card_pressed.bind(choice))
-		_card_container.add_child(btn)
-		_card_buttons.append(btn)
+		var icon_path := _upgrade_icon_path(choice.get("id", &""))
+		var card := UICard.new(
+			str(choice.get("name", "")),
+			str(choice.get("desc", "")),
+			UITheme.get_icon(icon_path),
+			UITheme.COLOR_ACCENT_PRIMARY
+		)
+		card.custom_minimum_size = Vector2(220, 280)
+		card.pressed.connect(_on_card_pressed.bind(choice))
+		_card_container.add_child(card)
+		_cards.append(card)
+
+## 升级类型→图标映射
+## max_health → heart / shield_regen / shield_max → shield / damage → crosshair / 其他 → zap
+func _upgrade_icon_path(id: Variant) -> String:
+	match id:
+		&"max_health":
+			return UITheme.ICON_HEART
+		&"shield_regen", &"shield_max":
+			return UITheme.ICON_SHIELD
+		&"damage":
+			return UITheme.ICON_CROSSHAIR
+		_:
+			return UITheme.ICON_ZAP
 
 func _on_card_pressed(choice: Dictionary) -> void:
+	if _is_closing:
+		return
+	_is_closing = true
+	# 选中卡片已在 UICard 内部 set_pinned(true) 高亮蓝边
+	# fade-out 过渡（120ms）→ 隐藏 → 通知 RunDirector（apply 时解除暂停）
+	var tween := UIMotion.tween_modal_out(self)
+	await tween.finished
 	var id = choice.get("id", &"")
 	if _run_director and _run_director.has_method("apply_upgrade"):
 		_run_director.apply_upgrade(id)
-	_hide()
-
-func _hide() -> void:
 	visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_is_closing = false
