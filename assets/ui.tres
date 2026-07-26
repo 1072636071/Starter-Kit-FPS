@@ -1,4 +1,7 @@
-[gd_resource type="Theme" load_steps=8 format=3 uid="uid://ui_theme_modern"]
+[gd_resource type="Theme" load_steps=10 format=3 uid="uid://ui_theme_modern"]
+
+[ext_resource type="FontFile" path="res://assets/fonts/Rajdhani-Medium.ttf" id="font_rajdhani"]
+[ext_resource type="FontFile" path="res://assets/fonts/JetBrainsMono-Regular.ttf" id="font_jetbrains"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel_bg"]
 bg_color = Color(0.10196, 0.13333, 0.18824, 1)
@@ -58,6 +61,12 @@ corner_radius_bottom_left = 2
 corner_radius_bottom_right = 2
 
 [resource]
+;; ── FontFamily (3) ────────────────────────────────────
+;;    Rajdhani Medium    — Display + Body（OFL）
+;;    JetBrains Mono     — 等宽数字（OFL）
+;;    Noto Sans CJK      — 中文回退（Godot 自带，无需文件引用）
+default_font = ExtResource("font_rajdhani")
+
 ;; ── Color tokens (8) ──────────────────────────────────
 ;;    bg_base           #0E1419 — 屏幕最底层背景
 ;;    bg_panel          #1A2230 — 面板/卡片背景

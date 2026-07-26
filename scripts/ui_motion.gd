@@ -104,7 +104,7 @@ static func pulse_glow(control: Control, pulse_color: Color = Color.WHITE) -> Tw
 	var tween := control.create_tween()
 	tween.set_loops()
 	tween.set_trans(TRANS_TYPE)
-	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_ease(EASE_TYPE)
 	tween.tween_property(control, "modulate", pulse_color * 0.7, DURATION_PULSE / 2.0)
 	tween.tween_property(control, "modulate", pulse_color, DURATION_PULSE / 2.0)
 	return tween
