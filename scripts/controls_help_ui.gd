@@ -31,17 +31,10 @@ const KEY_MAP: Dictionary = {
 
 const GROUP_ORDER: Array[String] = ["移动", "战斗", "系统"]
 
-const BG_COLOR := Color(0, 0, 0, 0.78)
-const PANEL_BG := Color(0.08, 0.08, 0.14, 0.95)
-const HEADER_COLOR := Color(1, 1, 1, 1)
-const GROUP_COLOR := Color(0.35, 0.65, 0.95, 1)
-const KEY_COLOR := Color(0.95, 0.85, 0.3, 1)
-const LABEL_COLOR := Color(0.9, 0.9, 0.9, 1)
-const HINT_COLOR := Color(0.45, 0.45, 0.5, 1)
-
 var _open := false
 var _we_paused := false
 var _bg: ColorRect
+var _panel: Control
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
@@ -66,6 +59,8 @@ func open(_player: Node3D) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_build_ui()
 	visible = true
+	if _panel:
+		UIMotion.tween_modal_in(_panel)
 
 func close() -> void:
 	if not _open:
@@ -99,42 +94,60 @@ func _unhandled_input(event: InputEvent) -> void:
 # ============================================================
 
 func _build_ui() -> void:
+	# 清理旧子节点
+	for child in get_children():
+		child.queue_free()
+	_panel = null
+
 	_bg = _make_bg()
 	add_child(_bg)
 
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	# 居中，占屏幕 75% 宽、85% 高
-	panel.anchor_left = 0.125
-	panel.anchor_top = 0.075
-	panel.anchor_right = 0.875
-	panel.anchor_bottom = 0.925
+	# 居中，占屏幕 60% 宽、60% 高
+	panel.anchor_left = 0.2
+	panel.anchor_top = 0.2
+	panel.anchor_right = 0.8
+	panel.anchor_bottom = 0.8
 	var pstyle := StyleBoxFlat.new()
-	pstyle.bg_color = PANEL_BG
-	pstyle.corner_radius_top_left = 12
-	pstyle.corner_radius_top_right = 12
-	pstyle.corner_radius_bottom_left = 12
-	pstyle.corner_radius_bottom_right = 12
+	pstyle.bg_color = UITheme.COLOR_BG_PANEL
+	pstyle.corner_radius_top_left = 8
+	pstyle.corner_radius_top_right = 8
+	pstyle.corner_radius_bottom_left = 8
+	pstyle.corner_radius_bottom_right = 8
 	pstyle.content_margin_left = 24
 	pstyle.content_margin_right = 24
 	pstyle.content_margin_top = 20
 	pstyle.content_margin_bottom = 20
 	panel.add_theme_stylebox_override("panel", pstyle)
 	add_child(panel)
+	_panel = panel
 
 	var root := VBoxContainer.new()
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_theme_constant_override("separation", 14)
 	panel.add_child(root)
 
-	# 标题
+	# 标题：图标 + 文字
+	var title_hbox := HBoxContainer.new()
+	title_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	title_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(title_hbox)
+
+	var icon_rect := TextureRect.new()
+	icon_rect.texture = UITheme.get_icon(UITheme.ICON_KEY)
+	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	icon_rect.custom_minimum_size = Vector2(32, 32)
+	icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_hbox.add_child(icon_rect)
+
 	var title := Label.new()
 	title.text = "按键说明"
+	title.add_theme_font_override("font", UITheme.get_font(UITheme.FONT_RAJDHANI_BOLD))
 	title.add_theme_font_size_override("font_size", 32)
-	title.add_theme_color_override("font_color", HEADER_COLOR)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", UITheme.COLOR_TEXT_PRIMARY)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(title)
+	title_hbox.add_child(title)
 
 	# 滚动区域
 	var scroll := ScrollContainer.new()
@@ -159,16 +172,17 @@ func _build_ui() -> void:
 
 	# 关闭提示
 	var hint := Label.new()
-	hint.text = "再按 F5 或点击背景关闭"
-	hint.add_theme_font_size_override("font_size", 18)
-	hint.add_theme_color_override("font_color", HINT_COLOR)
+	hint.text = "按 F5 或点击外部关闭"
+	hint.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_XS)
+	hint.add_theme_color_override("font_color", UITheme.COLOR_TEXT_SECONDARY)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hint)
 
 func _make_bg() -> ColorRect:
+	var bg_color := UITheme.COLOR_BG_BASE
 	var r := ColorRect.new()
-	r.color = BG_COLOR
+	r.color = Color(bg_color.r, bg_color.g, bg_color.b, 0.78)
 	r.anchor_left = 0.0
 	r.anchor_top = 0.0
 	r.anchor_right = 1.0
@@ -231,8 +245,8 @@ func _build_group_section(group_name: String, entries: Array) -> Control:
 
 	var header := Label.new()
 	header.text = "— %s —" % group_name
-	header.add_theme_font_size_override("font_size", 22)
-	header.add_theme_color_override("font_color", GROUP_COLOR)
+	header.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_LG)
+	header.add_theme_color_override("font_color", UITheme.COLOR_ACCENT_PRIMARY)
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(header)
 
@@ -244,20 +258,43 @@ func _build_group_section(group_name: String, entries: Array) -> Control:
 	box.add_child(grid)
 
 	for entry in entries:
+		# 描述标签
 		var label := Label.new()
 		label.text = entry["label"]
 		label.add_theme_font_size_override("font_size", 20)
-		label.add_theme_color_override("font_color", LABEL_COLOR)
+		label.add_theme_color_override("font_color", UITheme.COLOR_TEXT_PRIMARY)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		label.custom_minimum_size = Vector2(160, 0)
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		grid.add_child(label)
 
-		var key := Label.new()
-		key.text = "[%s]" % entry["key"]
-		key.add_theme_font_size_override("font_size", 20)
-		key.add_theme_color_override("font_color", KEY_COLOR)
-		key.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		grid.add_child(key)
+		# kbd 样式键名
+		var kbd := _make_kbd(entry["key"])
+		grid.add_child(kbd)
 
 	return box
+
+func _make_kbd(key_text: String) -> PanelContainer:
+	var kbd := PanelContainer.new()
+	var kbd_style := StyleBoxFlat.new()
+	kbd_style.bg_color = UITheme.COLOR_BG_PANEL_RAISED
+	kbd_style.corner_radius_top_left = 4
+	kbd_style.corner_radius_top_right = 4
+	kbd_style.corner_radius_bottom_left = 4
+	kbd_style.corner_radius_bottom_right = 4
+	kbd_style.content_margin_left = 4
+	kbd_style.content_margin_right = 4
+	kbd_style.content_margin_top = 2
+	kbd_style.content_margin_bottom = 2
+	kbd.add_theme_stylebox_override("panel", kbd_style)
+	kbd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var key_label := Label.new()
+	key_label.text = key_text
+	key_label.add_theme_font_override("font", UITheme.get_font(UITheme.FONT_JETBRAINS_REGULAR))
+	key_label.add_theme_font_size_override("font_size", 20)
+	key_label.add_theme_color_override("font_color", UITheme.COLOR_ACCENT_WARNING)
+	key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	kbd.add_child(key_label)
+
+	return kbd
