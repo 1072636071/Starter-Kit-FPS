@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="Weapon" format=3 uid="uid://dsnq2lytda08b"]
+
+[ext_resource type="Texture2D" uid="uid://2jld33y6h5pq" path="res://sprites/crosshair.png" id="1_crosshair"]
+[ext_resource type="PackedScene" path="res://models/weapons/微型冲锋枪-双枪口.glb" id="2_glb"]
+[ext_resource type="Script" uid="uid://dg01pkkc1c5vd" path="res://scripts/weapon.gd" id="3_script"]
+[ext_resource type="Texture2D" uid="uid://cqa45xkgj781i" path="res://models/weapons/Textures/colormap.png" id="4_colormap"]
+
+[resource]
+script = ExtResource("3_script")
+model = ExtResource("2_glb")
+albedo_texture = ExtResource("4_colormap")
+rotation = Vector3(0, 180, 0)
+muzzle_position = Vector3(0.1, -0.4, 1.5)
+cooldown = 0.15
+spread = 4.0
+shot_count = 2
+knockback = 25
+min_knockback = Vector2(0.05, 0.05)
+max_knockback = Vector2(0.05, 0.05)
+sound_shoot = "sounds/blaster.ogg"
+crosshair = ExtResource("1_crosshair")
+projectile_color = Color(1.0, 0.85, 0.1, 1)
+projectile_size = Vector3(2, 2, 2)
+projectile_speed = 35.0
+display_name = "微型冲锋枪-双枪口"
+magazine_size = 30
+max_reserve = 120
+reload_time = 2.0
+gold_cost_per_bullet = 1
+ammo_type = &"手枪弹"
+weapon_cost = 80
+durability_max = 90
+role_title = "双管泼水型"
+role_features = "双枪口齐射、弹幕密度翻倍、牺牲精度换爆发"
+reliability_stars = 1

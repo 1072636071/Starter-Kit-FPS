@@ -41,7 +41,7 @@ var weapon_index := 0
 # 武器数量上限（issue 09，ADR 022）
 const MAX_WEAPONS := 3
 # 弹药池初始值（issue 09）：每种弹药类型初始 36 发（旧系统，供测试兼容）
-# 实际开局可用备弹由下方 ammo_slots 初始化提供（120 发）
+# 实际开局可用备弹由下方 ammo_slots 初始化提供（100 发）
 const INITIAL_AMMO_PER_TYPE := 36
 # 保底弹药类型：弹药池至少包含手枪弹（issue 09）
 const AMMO_TYPE_PISTOL: StringName = &"手枪弹"
@@ -316,12 +316,12 @@ func _ready():
 		initiate_change_weapon(weapon_index)
 	_emit_ammo_updated()
 
-	# 初始化备弹槽：为首把已装备武器提供 120 发初始弹药
+	# 初始化备弹槽：为首把已装备武器提供 100 发初始弹药
 	ammo_slots.clear()
 	if not weapons.is_empty():
 		var first_ammo_type: StringName = weapons[0].ammo_type
 		var mag_size := maxi(1, weapons[0].magazine_size)
-		var reload_count := int(ceil(120.0 / float(mag_size)))
+		var reload_count := int(ceil(100.0 / float(mag_size)))
 		ammo_slots.append({"ammo_type": first_ammo_type, "remaining": reload_count, "capacity": reload_count})
 		for _i in range(1, AMMO_SLOT_COUNT):
 			ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})

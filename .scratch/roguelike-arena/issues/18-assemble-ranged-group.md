@@ -1,6 +1,6 @@
 # 18 — 远程组组装（警察 / 律师 / 日本艺妓 / 研究员-老人 / 牛仔 / 独眼牛仔 / 猎人 / 普通黑女）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 09/12/14/15
 

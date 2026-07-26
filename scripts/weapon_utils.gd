@@ -7,8 +7,8 @@ class_name WeaponUtils
 extends RefCounted
 
 ## 加载 res://weapons/ 目录下所有 .tres 武器资源
-static func load_all_weapons() -> Array:
-	var pool: Array = []
+static func load_all_weapons() -> Array[Weapon]:
+	var pool: Array[Weapon] = []
 	var dir := DirAccess.open("res://weapons/")
 	if dir == null:
 		return pool

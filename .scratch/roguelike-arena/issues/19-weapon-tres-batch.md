@@ -1,6 +1,6 @@
 # 19 — 武器 .tres 批量创建（18 把新枪）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issue 09
 

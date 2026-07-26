@@ -19,6 +19,8 @@ var _modules: Array[Node] = []
 
 @export var player: Node3D
 @export var move_speed: float = 3.0
+## 缓行速度（IDLE 状态下朝玩家缓慢移动）。=0 时自动设为 move_speed * 0.35
+@export var drift_speed: float = 0.0
 @export var chase_range: float = 50.0
 @export var attack_damage: float = 10.0
 @export var attack_cooldown: float = 1.5
@@ -86,7 +88,12 @@ var _current_anim: String = ""
 @onready var attack_timer: Timer = $AttackTimer
 @onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
 
+## 虚钩子：子类覆写以设置状态默认值（仅在 parent @export 未被 .tscn 覆写时生效）
+func _configure_stats() -> void:
+	pass
+
 func _ready():
+	_configure_stats()
 	attack_timer.wait_time = attack_cooldown
 	attack_timer.one_shot = true
 	attack_timer.timeout.connect(_on_attack_cooldown)
@@ -105,6 +112,10 @@ func _ready():
 	# 错帧偏移
 	_path_timer_offset = (spawn_index % 6) * 0.05
 	_path_timer = _path_timer_offset
+
+	# 双速模型：drift_speed = 0 时自动计算为 move_speed * 0.35
+	if drift_speed <= 0.0:
+		drift_speed = move_speed * 0.35
 
 	# 计算跳跃初速度（v = sqrt(2*g*h)，g=20.0）
 	jump_velocity = sqrt(2.0 * 20.0 * jump_height)
@@ -339,7 +350,17 @@ func _tick_state(delta: float) -> void:
 
 # === 子类覆盖的状态行为 ===
 func _tick_idle(_delta: float) -> void:
-	_desired_velocity = Vector3.ZERO
+	if not player:
+		_desired_velocity = Vector3.ZERO
+		return
+	nav_agent.target_position = player.global_position
+	var dir := _get_nav_direction()
+	if dir.length_squared() <= 0.01:
+		# NavMesh 不可用时直接指向玩家
+		var to_player := player.global_position - global_position
+		to_player.y = 0.0
+		dir = to_player.normalized() if to_player.length() > 0.1 else Vector3.ZERO
+	_desired_velocity = Vector3(dir.x * drift_speed, -gravity, dir.z * drift_speed)
 
 func _tick_chase(_delta: float) -> void:
 	if not player:
@@ -423,14 +444,19 @@ func _on_velocity_computed(safe_velocity: Vector3) -> void:
 	move_and_slide()
 
 # === 动画 ===
+## 动画选择阈值：缓行播 walk，追击播 run
+func _animation_threshold() -> float:
+	return (drift_speed + move_speed) / 2.0
+
 func _select_animation(idle_anim: String) -> void:
 	if not anim_player:
 		return
 	if _is_attacking or _dead:
 		return
 	var h_speed := Vector2(velocity.x, velocity.z).length()
+	var threshold := _animation_threshold()
 	var target: String
-	if h_speed > move_speed * 0.8:
+	if h_speed > threshold:
 		target = "run"
 	elif h_speed > 0.2:
 		target = "walk"

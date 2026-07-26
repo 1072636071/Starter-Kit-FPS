@@ -1,6 +1,6 @@
 # 16 — 锚点敌人组装（忍者 + 驯兽师 + 化学人）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 09/10/11/12
 

@@ -1,6 +1,6 @@
 # 17 — 近战组组装（健壮男 / 机器人-男电 / 机器人-女心 / 游戏宅 / 普通女）
 
-Status: ready-for-agent
+Status: done
 Type: task
 Refs: ADR 022, issues 09/13/14
 

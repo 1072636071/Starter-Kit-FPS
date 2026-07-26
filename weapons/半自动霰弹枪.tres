@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="Weapon" format=3 uid="uid://fra8no8ylwv8"]
+
+[ext_resource type="Texture2D" uid="uid://2jld33y6h5pq" path="res://sprites/crosshair.png" id="1_crosshair"]
+[ext_resource type="PackedScene" path="res://models/weapons/半自动霰弹枪.glb" id="2_glb"]
+[ext_resource type="Script" uid="uid://dg01pkkc1c5vd" path="res://scripts/weapon.gd" id="3_script"]
+[ext_resource type="Texture2D" uid="uid://cqa45xkgj781i" path="res://models/weapons/Textures/colormap.png" id="4_colormap"]
+
+[resource]
+script = ExtResource("3_script")
+model = ExtResource("2_glb")
+albedo_texture = ExtResource("4_colormap")
+rotation = Vector3(0, 180, 0)
+muzzle_position = Vector3(0.1, -0.4, 1.5)
+cooldown = 0.45
+spread = 10.0
+shot_count = 6
+knockback = 20
+min_knockback = Vector2(0.025, 0.025)
+max_knockback = Vector2(0.045, 0.04)
+sound_shoot = "sounds/blaster.ogg"
+crosshair = ExtResource("1_crosshair")
+projectile_color = Color(1.0, 0.3, 0.1, 1)
+projectile_size = Vector3(2, 2, 2)
+projectile_speed = 30.0
+display_name = "半自动霰弹枪"
+magazine_size = 6
+max_reserve = 30
+reload_time = 2.0
+gold_cost_per_bullet = 1
+ammo_type = &"霰弹"
+weapon_cost = 75
+durability_max = 105
+role_title = "近战连喷型"
+role_features = "每发6弹丸、射速比4管快、持续近战输出"
+reliability_stars = 3

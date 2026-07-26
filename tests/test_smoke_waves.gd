@@ -34,11 +34,11 @@ func _run_tests() -> void:
 	var expected_budgets := {
 		1: 60, 2: 72, 3: 86, 4: 104, 5: 124,
 		6: 149, 7: 179, 8: 215, 9: 258, 10: 310,
-		11: 372, 12: 446, 13: 535, 14: 642, 15: 771,
+		11: 372, 12: 446, 13: 535, 14: 642, 15: 770,
 	}
-	for wave_num in expected_budgets:
+	for wave_num: int in expected_budgets:
 		var actual := rd.wave_budget(wave_num)
-		var expected := expected_budgets[wave_num]
+		var expected: int = expected_budgets[wave_num]
 		_check(actual == expected,
 			"wave_budget(%d) = %d (expected %d)" % [wave_num, actual, expected])
 

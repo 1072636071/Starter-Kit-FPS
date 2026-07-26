@@ -30,17 +30,18 @@ func _get_attack_range() -> float:
 func _get_idle_anim() -> String:
 	return "idle"
 
+## 只在 parent @export 未被 .tscn 覆写时才设置近战默认值
+func _configure_stats() -> void:
+	if move_speed == 3.0: move_speed = 3.5
+	if chase_range == 50.0: chase_range = 50.0
+	if attack_damage == 10.0: attack_damage = 15.0
+	if attack_cooldown == 1.5: attack_cooldown = 1.2
+	if health == 100.0: health = 120.0
+	if awareness_range == 16.0: awareness_range = 16.0
+	if jump_height == 2.0: jump_height = 5.0
+
 func _ready():
-	# 覆盖基类默认值（近战特化）
-	move_speed = 3.5
-	chase_range = 50.0
-	attack_damage = 15.0
-	attack_cooldown = 1.2
-	health = 120.0
-	# 近战怪被动感知 8m（基类默认，显式设置以明确意图）
-	awareness_range = 16.0
-	# ADR 021：近战怪跳跃高度 5m（能上一层楼+余量）
-	jump_height = 5.0
+	_configure_stats()
 	super._ready()
 
 	# 战术散开角度

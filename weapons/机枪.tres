@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="Weapon" format=3 uid="uid://yawik3lsshik"]
+
+[ext_resource type="Texture2D" uid="uid://2jld33y6h5pq" path="res://sprites/crosshair.png" id="1_crosshair"]
+[ext_resource type="PackedScene" path="res://models/weapons/机枪.glb" id="2_glb"]
+[ext_resource type="Script" uid="uid://dg01pkkc1c5vd" path="res://scripts/weapon.gd" id="3_script"]
+[ext_resource type="Texture2D" uid="uid://cqa45xkgj781i" path="res://models/weapons/Textures/colormap.png" id="4_colormap"]
+
+[resource]
+script = ExtResource("3_script")
+model = ExtResource("2_glb")
+albedo_texture = ExtResource("4_colormap")
+rotation = Vector3(0, 180, 0)
+muzzle_position = Vector3(0.1, -0.4, 1.5)
+cooldown = 0.1
+spread = 4.0
+shot_count = 2
+knockback = 20
+min_knockback = Vector2(0.025, 0.025)
+max_knockback = Vector2(0.045, 0.04)
+sound_shoot = "sounds/blaster.ogg"
+crosshair = ExtResource("1_crosshair")
+projectile_color = Color(1, 0.5, 0.1, 1)
+projectile_size = Vector3(2, 2, 2)
+projectile_speed = 35.0
+display_name = "机枪"
+magazine_size = 50
+max_reserve = 200
+reload_time = 2.5
+gold_cost_per_bullet = 1
+ammo_type = &"步枪弹"
+weapon_cost = 120
+durability_max = 130
+role_title = "重火力压制型"
+role_features = "超大弹匣50发、持续扫射、中距离火力网"
+reliability_stars = 3

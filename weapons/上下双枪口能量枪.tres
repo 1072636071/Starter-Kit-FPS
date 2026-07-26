@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="Weapon" format=3 uid="uid://b7332nkifqqlx"]
+
+[ext_resource type="Texture2D" uid="uid://2jld33y6h5pq" path="res://sprites/crosshair.png" id="1_crosshair"]
+[ext_resource type="PackedScene" path="res://models/weapons/上下双枪口能量枪.glb" id="2_glb"]
+[ext_resource type="Script" uid="uid://dg01pkkc1c5vd" path="res://scripts/weapon.gd" id="3_script"]
+[ext_resource type="Texture2D" uid="uid://cqa45xkgj781i" path="res://models/weapons/Textures/colormap.png" id="4_colormap"]
+
+[resource]
+script = ExtResource("3_script")
+model = ExtResource("2_glb")
+albedo_texture = ExtResource("4_colormap")
+rotation = Vector3(0, 180, 0)
+muzzle_position = Vector3(0.1, -0.4, 1.5)
+cooldown = 0.22
+spread = 2.5
+shot_count = 2
+knockback = 20
+min_knockback = Vector2(0.025, 0.025)
+max_knockback = Vector2(0.045, 0.04)
+sound_shoot = "sounds/blaster.ogg"
+crosshair = ExtResource("1_crosshair")
+projectile_color = Color(0.3, 0.8, 1.0, 1)
+projectile_size = Vector3(2, 2, 2)
+projectile_speed = 35.0
+display_name = "上下双枪口能量枪"
+magazine_size = 12
+max_reserve = 48
+reload_time = 1.6
+gold_cost_per_bullet = 1
+ammo_type = &"能量电池"
+weapon_cost = 100
+durability_max = 95
+role_title = "能量纵列型"
+role_features = "上下双枪口齐射、弹道垂直覆盖、中距火力"
+reliability_stars = 2

@@ -68,7 +68,7 @@ var rng: RandomNumberGenerator
 #   - 波 10 预算 309 → 约 30+ 只怪物，需策略性弹药管理
 #   - 波 15 预算 773 → 大量精英堆叠，高手能撑但难以存活
 # 奖励 = cost（金币=经验同值），单波收益约为 budget 的 1.0 倍。
-# 弹药经济：初始备弹槽 120 发（15 次换弹 × 8 发弹匣）足够清前 2 波；
+# 弹药经济：初始备弹槽 100 发（13 次换弹 × 8 发弹匣）足够清前 2 波；
 #           宝箱武器掉落（低档 60% 权重）不跳过经济系统；
 #           高稀有度弹种（狙击/榴弹）需策略性购买。
 # 耐久：blaster 120 / blaster-repeater 100，激励多枪轮换；
@@ -86,6 +86,83 @@ const ENEMY_CONFIG: Dictionary = {
 		"cost": 10, "reward": 1000, "min_wave": 7,
 		"scene": preload("res://objects/enemy.tscn"),
 	},
+	# === 以下 13 条目为 ADR 022 完整花名册（issues 16–19 待实施）===
+	# 待对应 .tscn 场景创建后，逐条取消注释即可激活。
+	# 波次解锁规则：1–3(近战基础) → 4–6(+远程基础) → 7–9(+中档) → 10–12(+重装) → 13+(+精英)
+	#
+	# 波次 1–3：基础近战 + 远程 + 骚扰
+	# &"普通女": {
+	# 	"cost": 5, "reward": 500, "min_wave": 1,
+	# 	"scene": preload("res://objects/enemy_normal_female.tscn"),
+	# },
+	# &"普通黑女": {
+	# 	"cost": 5, "reward": 500, "min_wave": 1,
+	# 	"scene": preload("res://objects/enemy_normal_black_female.tscn"),
+	# },
+	# &"游戏宅": {
+	# 	"cost": 8, "reward": 800, "min_wave": 1,
+	# 	"scene": preload("res://objects/enemy_gamer.tscn"),
+	# },
+	#
+	# 波次 4–6：远程 + 控制 + 支援
+	# &"警察": {
+	# 	"cost": 6, "reward": 600, "min_wave": 4,
+	# 	"scene": preload("res://objects/enemy_police.tscn"),
+	# },
+	# &"律师": {
+	# 	"cost": 10, "reward": 1000, "min_wave": 4,
+	# 	"scene": preload("res://objects/enemy_lawyer.tscn"),
+	# },
+	# &"日本艺妓": {
+	# 	"cost": 10, "reward": 1000, "min_wave": 4,
+	# 	"scene": preload("res://objects/enemy_geisha.tscn"),
+	# },
+	# &"研究员-老人": {
+	# 	"cost": 12, "reward": 1200, "min_wave": 4,
+	# 	"scene": preload("res://objects/enemy_researcher.tscn"),
+	# },
+	#
+	# 波次 7–9：快枪 + 狙击 + 陷阱
+	# &"牛仔": {
+	# 	"cost": 12, "reward": 1200, "min_wave": 7,
+	# 	"scene": preload("res://objects/enemy_cowboy.tscn"),
+	# },
+	# &"独眼牛仔": {
+	# 	"cost": 14, "reward": 1400, "min_wave": 7,
+	# 	"scene": preload("res://objects/enemy_one_eye_cowboy.tscn"),
+	# },
+	# &"猎人": {
+	# 	"cost": 14, "reward": 1400, "min_wave": 7,
+	# 	"scene": preload("res://objects/enemy_hunter.tscn"),
+	# },
+	# &"化学人": {
+	# 	"cost": 15, "reward": 1500, "min_wave": 7,
+	# 	"scene": preload("res://objects/enemy_chemist.tscn"),
+	# },
+	#
+	# 波次 10–12：坦克 + 护盾 + 自爆
+	# &"健壮男": {
+	# 	"cost": 16, "reward": 1600, "min_wave": 10,
+	# 	"scene": preload("res://objects/enemy_strong.tscn"),
+	# },
+	# &"机器人-男电": {
+	# 	"cost": 18, "reward": 1800, "min_wave": 10,
+	# 	"scene": preload("res://objects/enemy_robot_male.tscn"),
+	# },
+	# &"机器人-女心": {
+	# 	"cost": 20, "reward": 2000, "min_wave": 10,
+	# 	"scene": preload("res://objects/enemy_robot_female.tscn"),
+	# },
+	#
+	# 波次 13+：精英
+	# &"驯兽师": {
+	# 	"cost": 22, "reward": 2200, "min_wave": 13,
+	# 	"scene": preload("res://objects/enemy_tamer.tscn"),
+	# },
+	# &"忍者": {
+	# 	"cost": 25, "reward": 2500, "min_wave": 13,
+	# 	"scene": preload("res://objects/enemy_ninja.tscn"),
+	# },
 }
 
 var _wave_active := false
@@ -344,17 +421,25 @@ func compute_wave_composition(wave_number: int) -> Array[StringName]:
 	return types
 
 func _spawn_all(types: Array[StringName]) -> void:
+	var player_pos: Vector3 = _player.global_position if _player else Vector3.ZERO
+	var positions := _find_spawn_positions(types.size(), player_pos)
+
+	if not positions.is_empty():
+		for i in types.size():
+			_spawn_monster(types[i], positions[i], i)
+		return
+
+	# 兜底：NavMesh 选点失败，回退固定 SpawnPoints
+	push_warning("RunDirector: NavMesh选点失败，回退固定出生点")
 	if spawn_points.is_empty():
 		push_warning("RunDirector: 无出生点，怪物将刷在原点")
 	var pts: Array[Marker3D] = spawn_points.duplicate()
-	# 用本局 rng 打乱（不污染全局）
 	_shuffle_in_place(pts)
 	for i in types.size():
 		var pos: Vector3
 		if not pts.is_empty():
 			var pt: Marker3D = pts[i % pts.size()]
 			pos = pt.global_position
-			# 需求 > 出生点数时循环取点并叠加 ±2m 抖动避免精确重叠
 			if i >= pts.size():
 				pos += Vector3(rng.randf_range(-2.0, 2.0), 0.0, rng.randf_range(-2.0, 2.0))
 		else:
@@ -386,6 +471,88 @@ func _spawn_monster(type: StringName, pos: Vector3, index: int = 0) -> Node3D:
 		# 绑定怪物实例以取死亡位置（掉血包用）
 		m.died.connect(_on_monster_died.bind(m))
 	return m
+
+## 以玩家为中心在 NavMesh 上选刷怪点（近圈 15–30m，不足则远圈 30–60m）
+## 返回空数组时调用方应回退固定 SpawnPoints
+func _find_spawn_positions(count: int, player_pos: Vector3) -> Array[Vector3]:
+	var world := monsters_parent.get_world_3d() if monsters_parent else null
+	if world == null:
+		return []
+
+	var map_rid := world.navigation_map
+	var space_state := world.direct_space_state
+
+	# 近圈优先
+	var near := _try_spawn_ring(count, player_pos, 15.0, 30.0, map_rid, space_state)
+	if near.size() >= count:
+		return near.slice(0, count)
+
+	# 近圈不足，远圈补足
+	var positions: Array[Vector3] = near.duplicate()
+	var far := _try_spawn_ring(count - positions.size(), player_pos, 30.0, 60.0, map_rid, space_state)
+	for p in far:
+		positions.append(p)
+
+	return positions
+
+## 在环形区域内尝试选点（单圈），最多返回 count 个有效位置
+func _try_spawn_ring(count: int, center: Vector3, min_radius: float, max_radius: float, map_rid: RID, space_state) -> Array[Vector3]:
+	var positions: Array[Vector3] = []
+	const MAX_ATTEMPTS := 30
+
+	for _slot in range(count):
+		var found := false
+		for _attempt in range(MAX_ATTEMPTS):
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(min_radius, max_radius)
+			var candidate := center + Vector3(cos(angle) * dist, center.y, sin(angle) * dist)
+
+			# NavMesh 可达性
+			var nav_point := NavigationServer3D.map_get_closest_point(map_rid, candidate)
+			if nav_point.distance_to(candidate) > 5.0:
+				continue
+
+			candidate = nav_point
+
+			# 向下 RayCast 验证地面
+			var from_down := candidate + Vector3(0, 2.0, 0)
+			var to_down := candidate + Vector3(0, -2.0, 0)
+			var query_down := PhysicsRayQueryParameters3D.create(from_down, to_down)
+			query_down.collision_mask = 1
+			var hit_down: Dictionary = space_state.intersect_ray(query_down)
+			if hit_down.is_empty():
+				continue
+
+			candidate.y = hit_down.position.y
+
+			# 向上 RayCast 验证无天花板
+			var from_up := candidate
+			var to_up := candidate + Vector3(0, 5.0, 0)
+			var query_up := PhysicsRayQueryParameters3D.create(from_up, to_up)
+			query_up.collision_mask = 1
+			var hit_up: Dictionary = space_state.intersect_ray(query_up)
+			if not hit_up.is_empty():
+				continue
+
+			# 间距检查（≥ 3m）
+			var too_close := false
+			for existing in positions:
+				var h_diff := candidate - existing
+				h_diff.y = 0.0
+				if h_diff.length() < 3.0:
+					too_close = true
+					break
+			if too_close:
+				continue
+
+			positions.append(candidate)
+			found = true
+			break
+
+		if not found:
+			break
+
+	return positions
 
 ## 怪物 died 信号处理：清场检测 + 奖励结算 + 血包掉落
 func _on_monster_died(monster_type: StringName, monster: Node3D) -> void:

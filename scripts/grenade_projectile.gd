@@ -101,7 +101,7 @@ func _get_monsters_in_radius(radius: float) -> Array[Node]:
 
 	var hits := space.intersect_shape(query)
 	for hit in hits:
-		var collider := hit.get("collider")
+		var collider: Variant = hit.get("collider")
 		if collider and is_instance_valid(collider) and collider.is_in_group("monster"):
 			result.append(collider)
 	return result
@@ -110,7 +110,7 @@ func _get_monsters_in_radius(radius: float) -> Array[Node]:
 func _apply_emp_effect(target: Node) -> void:
 	# 减速：移速 ×0.3
 	if "speed" in target:
-		var original := target.speed
+		var original: Variant = target.speed
 		target.speed = original * EMP_SLOW_FACTOR
 		# 3 秒后恢复
 		await get_tree().create_timer(EMP_DURATION).timeout

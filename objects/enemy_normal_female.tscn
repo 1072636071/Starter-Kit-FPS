@@ -1,0 +1,51 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="PackedScene" path="res://models/monsters/普通女.glb" id="1_model"]
+[ext_resource type="Script" path="res://objects/monster_melee.gd" id="2_script"]
+[ext_resource type="PackedScene" path="res://models/melee_weapons/Sword6.glb" id="3_sword"]
+[ext_resource type="Script" path="res://scripts/modules/module_dash.gd" id="4_mod_dash"]
+[ext_resource type="Script" path="res://scripts/modules/module_stealth.gd" id="5_mod_stealth"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_melee"]
+radius = 0.4
+height = 1.4
+
+[node name="EnemyNormalFemale" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 1
+script = ExtResource("2_script")
+melee_weapon_model = ExtResource("3_sword")
+health = 80.0
+move_speed = 3.5
+attack_damage = 13.0
+attack_cooldown = 1.3
+chase_range = 45.0
+awareness_range = 14.0
+jump_height = 4.0
+
+[node name="Model" type="Node3D" parent="."]
+
+[node name="CharacterModel" parent="Model" instance=ExtResource("1_model")]
+transform = Transform3D(0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+shape = SubResource("CapsuleShape3D_melee")
+
+[node name="AttackTimer" type="Timer" parent="."]
+wait_time = 1.3
+one_shot = true
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.5
+target_desired_distance = 0.5
+avoidance_enabled = true
+radius = 0.5
+neighbor_distance = 5.0
+max_neighbors = 8
+
+[node name="ModuleDash" type="Node" parent="."]
+script = ExtResource("4_mod_dash")
+
+[node name="ModuleStealth" type="Node" parent="."]
+script = ExtResource("5_mod_stealth")

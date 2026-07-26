@@ -52,6 +52,8 @@ class_name Weapon
 @export var weapon_mode: String = ""
 ## beam 模式每 tick 间隔（秒），每 tick 扣 1 弹药 + 1 耐久 + 结算一次伤害
 @export var tick_interval: float = 0.1
+## 榴弹等 AOE 弹体：为 true 时弹体命中产生范围爆炸（issue 19）
+@export var projectile_explosion: bool = false
 
 
 ## 根据耐久比例返回对应颜色：>0.6 绿 / >0.2 黄 / ≤0.2 红

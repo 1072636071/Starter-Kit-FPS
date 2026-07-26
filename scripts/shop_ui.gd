@@ -149,7 +149,7 @@ func _generate_shop_stock() -> void:
 
 	# --- 武器区：从 weapons/ 目录扫描所有 .tres，随机抽 3 把不重复 ---
 	var all_weapons: Array[Weapon] = _scan_weapon_tres_files()
-	_shop_weapons = _pick_random_n(all_weapons, 3, rng)
+	_shop_weapons.assign(_pick_random_n(all_weapons, 3, rng))
 
 	# --- 弹药区：随机抽 3–4 种不重复弹种 ---
 	var ammo_count := rng.randi_range(3, 4)
@@ -161,7 +161,7 @@ func _generate_shop_stock() -> void:
 	_shop_grenade_types = _pick_random_n(grenade_types, grenade_count, rng)
 
 ## 扫描 res://weapons/ 目录下所有 .tres 文件，加载为 Weapon 资源（委托给 WeaponUtils）
-func _scan_weapon_tres_files() -> Array:
+func _scan_weapon_tres_files() -> Array[Weapon]:
 	return WeaponUtils.load_all_weapons()
 
 ## 从 arr 中随机抽 count 个不重复项

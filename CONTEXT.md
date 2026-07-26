@@ -144,10 +144,14 @@
 | **Player Blip（玩家光点）** | 北朝上方案下，小地图上表示玩家位置的**朝向箭头**。**采用 2D 叠加**：每帧把玩家世界 (x,z) 投影为小地图 UV，在圆形 `TextureRect` 之上用一个 2D `Control` 箭头表示，箭头随玩家 yaw 旋转以指示 facing；相机本身不转。非 3D 图层标记（避免泄漏进真实 3D 视野）。 |
 | **Enemy Blip（敌人光点）** | 小地图上表示敌人的标记，**两种敌人都显示**（不按视线/距离过滤），**采用 2D 叠加**：每帧把敌人世界 (x,z) 投影为小地图 UV，在圆形 `TextureRect` 之上用 2D 圆点/图标表示，近战/远程用形状或深浅区分。非 3D 图层标记。 |
 | **Minimap Shape & Position（小地图形状与位置）** | **圆形**，位于**右上角**（避开左下血条、右下弹药列表）。方形的 `SubViewport` 渲染经**圆形遮罩**（`ShaderMaterial` 径向 alpha）裁成圆，隐藏俯视渲染四角的畸变。 |
-| **Minimap Zoom（小地图缩放/覆盖范围）** | **全图覆盖（~160m）**：俯视正交相机半高约 80m，固定俯视整个 160×160 世界（边界 ±80），相机本身不随玩家移动。玩家/敌人 blip 在图内移动。与"敌人全显示"零冲突。 |
+| **Minimap Zoom（小地图缩放/覆盖范围）** | **玩家中心局部跟随（player-centered follow）**：俯视正交相机**跟随玩家 x/z**（不再固定原点），只渲染玩家周围一圈；覆盖范围由 `View Radius` 决定（可配置，初值 80m，即显示 ±80 局部）。取代原"全图覆盖 ~160m"（见 [ADR 026](docs/adr/026-minimap-player-centered-follow.md)）。地图任意尺寸/增长都不影响局部清晰度。 |
+| **View Radius（视图半径）** | 玩家中心小地图的半覆盖半径（m），即相机正交半高。取代原硬编码 `WORLD_HALF=80` 常数；改为可配置（运行时 `@export` 或常量），与地图尺寸解耦。初值推荐 80m（见 [ADR 026](docs/adr/026-minimap-player-centered-follow.md)）。 |
+| **Minimap Follow（小地图跟随）** | 俯视相机每帧同步玩家 x/z 位置（y 仍高处朝下、朝向固定北朝上）。渲染内容随玩家移动而平移，玩家永远在小地图中心。实现：`camera.global_position.x = player.global_position.x; camera.global_position.z = player.global_position.z`。 |
 | **Minimap Cull Mask（小地图相机剔除掩码）** | 俯视相机 `cull_mask = layer 1`（仅世界/地形）。**不**含 layer 2（武器 viewmodel，天然不进图）。敌人真实 3D mesh 已从 layer 1 挪到 layer 3（见下），故俯视渲染无敌人 blob——blip 由 2D 叠加独立绘制。 |
 | **Minimap Enemy Layer（敌人小地图图层）** | 敌人真实 3D mesh 从默认 **layer 1 挪到 layer 3**，使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20 故真实 FPS 视野不受影响。实现位置：`monster_melee.gd` / `monster_ranged.gd` 的 `_ready()` 中通过 `model.find_children("*", "MeshInstance3D", true, false)` 遍历并设 `child.layers = 4`（layer 3 的 bitmask 值）。选用运行时设置而非 `.tscn` editable_instance：.glb 实例内 mesh 节点路径不稳定（存在 `character-a` 中间节点），editable_instance 路径易失效；运行时按类型遍历更健壮。 |
-| **Minimap Projection（小地图投影）** | 因全图固定正交相机，实体世界 (x,z) → 小地图 UV 为**线性映射**（无需透视除法）：`uv = (world_pos.xz - world_min) / world_size`，再换算到圆形 `TextureRect` 的局部像素坐标放置 2D blip。 |
+| **Minimap Projection（小地图投影）** | 因玩家中心跟随相机，实体世界 (x,z) → 小地图 UV 为**相对玩家的线性映射**：`uv = (world_pos.xz - player_pos.xz + view_radius) / (2 × view_radius)`，再换算到圆形 `TextureRect` 局部像素坐标放置 2D blip。超出 view_radius 的实体为"图外敌人"，不画在图内、改由屏外威胁指示（见下）表示。 |
+| **Off-Map Enemy（图外敌人）** | 世界位置距玩家水平距离 > `view_radius` 的敌人。玩家中心视图下不在图内出现，但威胁信息不可丢——由屏外威胁指示（见下）在圆形边缘表示其方向（与可选距离）。 |
+| **Off-Screen Indicator（屏外威胁指示）** | 图外敌人在小地图上圆形边缘的提示标记，通常为指向该敌人方向的箭头/刻度，使"随时知道敌人在哪"的核心价值在玩家中心方案下仍成立（取代原"敌人全显示"在图内全画的做法）。v1 最简：每个图外敌人画一个小三角形箭头在圆形边缘，按类型着色（近战=红、远程=黄），不合并分组、不显示距离/数量。见 [ADR 026](docs/adr/026-minimap-player-centered-follow.md) Q5。 |
 | **Minimap Integration（小地图集成位置）** | 世界侧：俯视相机 + `SubViewport` 加进 `main.tscn`（`Main` 子节点，**不是** Player 下，因相机固定不跟玩家）；UI 侧：圆形 `TextureRect` + blip 层加进 `HUD`（`CanvasLayer`）下的 `Minimap` `Control` 容器；逻辑由新建 `scripts/minimap.gd` 驱动，负责每帧投影实体 (x,z)→UV 并管理 2D blip。 |
 
 ## Roguelike 竞技场系统（Roguelike Arena）
@@ -184,7 +188,7 @@
 | **Health（血量）** | 玩家底层生命值（`player.gd` 已有 `health: int = 100`）。被护盾吸收后的溢出伤害扣减血量；**不自动恢复**，仅由血包恢复；归零即本局结束（护盾归零不致死）。见 [ADR 010](file:///g:/work/Starter-Kit-FPS/docs/adr/010-shield-absorbs-before-health.md)。 |
 | **Game Over（游戏结束）** | 玩家 `health <= 0` 时本局结束：冻结游戏 → 显示结算界面（存活波数、击杀数、累计金币、达到等级等）→ 提供"重开一局"。取代原 `reload_current_scene()` 的**裸**重置（即"无界面、无反馈"地直接 reload），改为"先显示界面、玩家点重开后再 reload"。重开即全新本局、状态全重置。**累计金币**=本局总赚取（`gold_earned_total`，花掉的也算），非当前余额。见 [ADR 014](file:///g:/work/Starter-Kit-FPS/docs/adr/014-death-game-over-screen.md)。 |
 | **RunDirector（运行编排器）** | 竞技场运行的最高层 seam（新增 `Main` 子节点 + `run_director.gd`）。持有本局状态（`gold` / `xp` / `level` / `wave` / `kills` / `gold_earned_total` / `rng`），负责波次推进、刷怪、清场检测、奖励结算、升级触发、游戏结束。暴露信号：`wave_started` / `wave_cleared(wave_number, cleared_by_timeout)` / `gold_changed` / `xp_changed` / `level_up_offered` / `kills_changed` / `game_over(stats)`。为 `PROCESS_MODE_PAUSABLE`（见 Pause Semantics）。 |
-| **Spawn Point（出生点）** | 竞技场四周预定义的 `Marker3D`（≥ 8 个，挂 `Main/SpawnPoints` 下）。RunDirector 刷怪时打乱出生点顺序依次取用，需求 > 出生点数时循环 + ±2m 随机抖动避免重叠。取代现 `main.tscn` 中 `Monsters` 节点下的 4 个手放实例（移除）。 |
+| **Spawn Point（出生点）** | 竞技场四周预定义的 `Marker3D`（≥ 8 个，挂 `Main/SpawnPoints` 下）。**ADR 025 后降级为兜底**：优先使用 Enemy Spawn Zone（玩家周围 NavMesh 选点），仅在 NavMesh 选点全部失败时回退至此固定出生点逻辑（打乱顺序依次取用 + ±2m 抖动）。 |
 | **monster_type（怪物类型标识）** | 每个怪物脚本顶部 `const MONSTER_TYPE: StringName` 硬编码的类型标识（**不**用 `@export`，避免漏配）。取值与脚本/场景基名一致：`&"monster_melee"` / `&"monster_ranged"` / `&"enemy"`。怪物 `destroy()` 中 `died(monster_type)` 信号携带此值，RunDirector 按此查奖励表。 |
 | **died（死亡信号）** | 三种怪物新增的 `signal died(monster_type: StringName)`，于 `destroy()` 内、`queue_free()` 前（含延迟 `queue_free()` 分支）发射。RunDirector 监听以结算奖励、递减 `alive_count`、计数 `kills`。**不**用 `get_child_count()` 检测清场（死亡动画期间怪物仍在树上会误判）。 |
 | **alive_count（存活计数）** | RunDirector 维护的本波存活怪物计数。每刷一只 `+= 1`，每收一个 `died` 信号 `-= 1`。归零即该波清场、进入 Intermission。 |
@@ -231,6 +235,9 @@
 | **NavMesh Tuning（导航网格调参）** | `nav_region.gd` 烘焙参数优化：`agent_radius = 0.5`（与碰撞体匹配）、`agent_height = 1.5`（怪物模型高度）、`cell_size = 0.25`（精度提升，默认 0.3 太粗）、`agent_max_climb = StepConstants.STEP_HEIGHT`（不变）、`agent_max_slope = 45.0`（默认）。更小的 cell_size 使路径更贴合墙壁，减少"穿墙感"。 |
 | **Staggered Updates（错帧更新）** | 性能优化：多只怪物的路径计算分散到不同物理帧。每只怪在 `_ready()` 中按序号计算 `_update_delay = (index % 6) * 0.05`，路径计时器初始值偏移该量。16 只怪时分 6 帧处理，每帧最多 3 只怪请求路径。 |
 | **Chain Aggro（连锁警觉）** | 两级感知模型：**被动感知**（`awareness_range`，默认 16m；近战 16m、远程 24m）+ **警觉传播**（alert 事件驱动，范围 `chase_range`）。alert 由玩家开枪（60m）、怪物开枪（50m）、怪物死亡（40m）触发，穿墙传播。（2026-07-25 全局翻倍，原值：awareness 8/12m，alert 30/25/20m。）IDLE 怪物被 alert 惊动后转 CHASE；进入 CHASE 后不因安静退回 IDLE（只走 LOST 路线）。实现见 `AlertSystem` autoload（`emit_alert` / `has_alert_nearby`），alert 缓存存活 0.5s。 |
+| **Dual Speed Model（双速移动模型）** | 敌人移动速度分为两档：`drift_speed`（缓行速度，IDLE 状态下缓慢朝玩家移动）与 `move_speed`（追击最大速度，CHASE/LOST/JUMP 状态下使用）。`drift_speed` 默认 = `move_speed × 0.35`（子类可覆盖）。动画选择器按实际速度动态判定 walk（低速）/ run（高速）。取代原 IDLE 静止行为，使怪物即使未警觉也持续逼近玩家，制造压迫感。参见 ADR 025。 |
+| **Drift Speed（缓行速度）** | 双速模型中 IDLE 状态下的慢速移动值。近战≈1.2、远程≈0.9、飞行≈1.5，各角色化敌人 = `move_speed × 0.35`。`monster_base.gd` 中 `@export var drift_speed: float = 0.0`，=0 时自动按公式计算。 |
+| **Enemy Spawn Zone（敌人出生区域）** | 敌人生成时优先在玩家周围 NavMesh 可达空旷地带选点，取代原固定 `SpawnPoints`。两层：近圈（15–30m 优先）→ 远圈（30–60m 退而求其次）。空旷地带 = NavMesh 可达 + 地面 RayCast 命中 + 上方 5m 无遮挡 + 间距 ≥3m。兜底回退至原固定出生点。怪物在选定地面位置上方 8m 生成后缓降落地（复用 DROP_HEIGHT 机制）。参见 ADR 025。 |
 
 ## 敌人跳跃导航系统（Enemy Jump Navigation）
 

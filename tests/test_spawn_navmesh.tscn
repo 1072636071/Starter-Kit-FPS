@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="btestspwnnv33"]
+
+[ext_resource type="Script" path="res://tests/test_spawn_navmesh.gd" id="1_script"]
+
+[node name="TestSpawnNavmesh" type="Node3D"]
+script = ExtResource("1_script")

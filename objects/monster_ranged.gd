@@ -38,17 +38,18 @@ func _get_attack_range() -> float:
 func _get_idle_anim() -> String:
 	return "holding-right"
 
+## 只在 parent @export 未被 .tscn 覆写时才设置远程默认值
+func _configure_stats() -> void:
+	if move_speed == 3.0: move_speed = 2.5
+	if chase_range == 50.0: chase_range = 60.0
+	if attack_damage == 10.0: attack_damage = 8.0
+	if attack_cooldown == 1.5: attack_cooldown = 1.8
+	if health == 100.0: health = 80.0
+	if awareness_range == 16.0: awareness_range = 24.0
+	if jump_height == 2.0: jump_height = 2.0
+
 func _ready():
-	# 覆盖基类默认值（远程特化）
-	move_speed = 2.5
-	chase_range = 60.0
-	attack_damage = 8.0
-	attack_cooldown = 1.8
-	health = 80.0
-	# 远程怪视力更好（被动感知范围 12m vs 近战 8m）
-	awareness_range = 24.0
-	# ADR 021：远程怪跳跃高度 2m（仅能上矮平台）
-	jump_height = 2.0
+	_configure_stats()
 	super._ready()
 
 	# 随机 strafe 方向

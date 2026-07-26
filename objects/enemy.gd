@@ -8,6 +8,8 @@ const MONSTER_TYPE: StringName = &"enemy"
 @export var player: Node3D
 @export var enemy_spread: float = 0.08
 @export var fly_speed: float = 4.0
+## 缓行速度（未进入追逐时缓慢靠近玩家）。=0 时自动设为 fly_speed * 0.35
+@export var drift_speed: float = 0.0
 @export var hover_height: float = 4.0
 @export var preferred_distance: float = 8.0
 @export var chase_range: float = 70.0
@@ -48,6 +50,9 @@ func _ready():
 	# 自动查找玩家
 	if not player:
 		player = get_tree().get_first_node_in_group("player")
+	# 双速模型：drift_speed = 0 时自动计算
+	if drift_speed <= 0.0:
+		drift_speed = fly_speed * 0.35
 
 func _process(delta):
 	# 坠落安全网
@@ -101,6 +106,11 @@ func _process(delta):
 	# 被墙挡时升高（简单检测）
 	if _is_wall_ahead():
 		target_y = hover_height + 2.0
+
+	# IDLE：玩家超出 chase_range，缓行靠近
+	if horizontal_dist >= chase_range:
+		var dir := Vector3(to_player.x, 0, to_player.z).normalized()
+		target_pos = global_position + dir * drift_speed * delta
 
 	# 平滑移动
 	target_pos.y = target_y
