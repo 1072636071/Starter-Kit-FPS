@@ -24,18 +24,17 @@
 |------|------|
 | **Magazine（弹匣）** | 武器当前装入的弹药数。每发射一次减 1，归零后无法射击，必须换弹。每把枪独立维护。 |
 | **Ammo Type（弹药类型）** | `Weapon.ammo_type`（StringName，默认 `"手枪弹"`）。同类型弹药的武器共享同一备弹池。参见 [ADR 022](docs/adr/022-enemy-weapon-expansion.md)。 |
-| **Ammo Pool（弹药池）** | 玩家备弹的存储结构（issue 09 起）：`player.ammo_reserve: Dictionary`，键为 Ammo Type、值为剩余备弹数；初始按已装备武器的 ammo_type 建键（保底含 `"手枪弹"`），每类 36 发。取代了旧的按武器独立的 `reserve: Array[int]`。 |
-| **Reserve（备弹）** | 玩家携带的备用弹药总量。换弹时从弹药池对应弹药类型中取出弹药填满弹匣；该类型备弹归零则无法换弹。同类弹药武器共享同一池。 |
+| **Ammo Pool（弹药池）** | ~~已废弃~~（三层弹药流重构）。由 Backpack（背包仓库）+ Ammo Slot（备弹槽）替代。 |
+| **Reserve（备弹）** | ~~已废弃~~（三层弹药流重构）。已被三层模型替代：Backpack → Ammo Slot → Magazine。 |
 | **Magazine Size（弹匣容量）** | 单次装填能容纳的最大弹数，在 Weapon 资源中配置。不同武器可有不同弹匣容量。 |
 | **Max Reserve（最大备弹）** | 每把枪能携带的备弹上限，在 Weapon 资源中配置；商店按行购买时以该武器上限封顶对应弹药池余量（`effective_max_reserve`，含升级 bonus）。 |
 | **Weapon Durability（武器耐久）** | `Weapon.durability_max`（≤0 为无限耐久）。玩家按 `weapon_durability: Array[int]` 与 `weapons` 同序追踪；每次成功击发 -1，归零触发武器损毁：播放 0.3s 碎裂粒子 → 从装备移除 → 自动切换下一把或进入空手状态。参见 ADR 022 / issue 09。 |
 | **Behavior Module（行为模块）** | 挂载在怪物节点下的普通子节点，按需实现 `module_setup(host)` / `on_tick(delta)` / `on_enter_state(state)` / `on_exit_state(state)` / `on_damage(amount)` / `on_death()` 即自动生效（`has_method` 检查，未实现自动跳过）。由 `monster_base._setup_modules()` 在 `_ready` 时发现。参见 ADR 022 / issue 09。 |
 | **ENEMY_CONFIG** | `run_director.gd` 的敌人配置常量表：键为怪物类型 id，条目含 `cost`（刷出成本）/ `reward`（击杀奖励）/ `min_wave`（解锁波次）/ `scene`。数据驱动刷怪，新增敌人 = 追加表条目。初始 3 种，issue 10–14 追加其余 13 种。 |
-| **Reload（换弹）** | 将备弹转移至弹匣的动作。触发方式：手动按 R 键；或弹匣归零后继续扣扳机时自动触发。需一定时间完成（换弹时间），期间不能射击。若备弹不足，只装填可用数量。换弹时同时播放武器模型动画（Tween，武器移出视野再回来）与右下角 HUD 进度条。 |
+| **Reload（换弹）** | 将备弹转移至弹匣的动作。触发方式：手动按 R 键；或弹匣归零后继续扣扳机时自动触发。需一定时间完成，期间不能射击。若备弹不足，只装填可用数量。 |
 | **Reload Time（换弹时间）** | 完成换弹动作所需的秒数，在 Weapon 资源中配置。 |
-| **Reload Animation（换弹动画）** | 换弹期间复用武器 Container 的 Tween 动画，使武器模型移出视野再归位，营造"装填"视觉。与切枪动画（initiate_change_weapon）共享 Tween 机制，但换弹期间不切换武器模型。 |
-| **Reload Progress Bar（换弹进度条）** | 右下角弹药 HUD 上的换弹进度指示（直线或环形），随 reload_time 实时填充，完成后消失。 |
-| **reload 输入动作** | 换弹的手动触发按键，绑定到 project.godot 的 `reload` 动作，默认 R 键。 |
+| **Reload Animation（换弹动画）** | 换弹期间复用武器 Container 的 Tween 动画，使武器模型移出视野再归位。 |
+| **Reload Progress Bar（换弹进度条）** | 右下角弹药 HUD 上的换弹进度指示，随 reload_time 实时填充，完成后消失。 |
 
 ## 后坐力与精度
 
@@ -44,8 +43,45 @@
 | **Knockback（后坐力）** | 武器开火时施加给玩家的反冲力，包含三个分量：相机垂直旋转（knockback.x，枪口上跳）、相机水平旋转（knockback.y，随机左右偏转）、以及武器模型位置回弹和玩家移动速度反冲。值越大后坐力越强。Blaster=20, Blaster-Repeater=5。 |
 | **Recoil Recovery（后坐力自动恢复）** | 停止射击后，被后坐力推偏的相机角度**自动回弹**到射击前原始瞄准点的行为。恢复由武器参数控制（速度、延迟、缓动曲线）。与纯视觉后坐（相机不动武器动）和纯真实后坐（永不恢复）不同——折中方案：有真实后坐的重量感但不惩罚普通玩家。参见 [ADR 028](docs/adr/028-recoil-auto-recovery.md)。 |
 | **Spread（散布）** | 弹体发射方向相对准星中心的随机偏转角，以武器资源的 `spread` 属性配置。散布角度 = randf_range(-spread, spread) * 0.02，作用在相机基向量上。值越大精度越低。 |
-| **ADS（瞄准）** | Aim Down Sights，右键瞄准状态。进入 ADS 时：FOV 从默认 75° 缩小至 60°（视觉变焦）、武器散布减半（精度翻倍）、玩家移动速度减慢 30%。持续按住右键维持 ADS，松开退出。 |
+| **ADS（瞄准）** | Aim Down Sights，右键瞄准状态。进入 ADS 时三参数（FOV 缩放、散布系数、移速系数）**按武器差异化**配置在 `Weapon` 资源的 `ADS` subgroup（4 字段，见下）。持续按住右键维持 ADS，松开退出。参见 [ADR 030](docs/adr/030-per-weapon-ads-coefficients.md)。 |
+| **ads_zoom_factor** | `Weapon` 资源字段（float，默认 1.25）。ADS 视觉放大倍率，ADS 时 `camera.fov = DEFAULT_FOV / ads_zoom_factor`（75/1.25=60°）。普通武器用此字段配置（如霰弹 1.1、步枪 1.5）。当 `ads_fov_override > 0` 时本字段被忽略。 |
+| **ads_fov_override** | `Weapon` 资源字段（float，默认 0.0）。>0 时优先使用此值作为 ADS 时 `camera.fov` 的绝对度数，绕过 `ads_zoom_factor` 计算。狙击类武器用此字段直配开镜 fov（如狙击步枪 30.0、重型狙击 18.0），比倍率更精确。 |
+| **ads_spread_factor** | `Weapon` 资源字段（float，默认 0.5）。ADS 时武器 `spread` 乘以此值。狙击 0.1–0.2（精度极大提升）、霰弹 0.8–0.85（ADS 几乎不减散布，保留近战泼水特性）。 |
+| **ads_speed_factor** | `Weapon` 资源字段（float，默认 0.7）。ADS 时玩家移速乘以此值。狙击 0.35–0.4（开镜极慢更稳）、霰弹 0.85（保留机动）。 |
 | **Enemy Spread（敌人散布）** | 敌人射击时的弹道偏转。两个敌人类（Enemy、MonsterRanged）均有 `export var enemy_spread: float` 可配置属性，默认值 0.08。实际散布随目标距离线性增大：`effective_spread = enemy_spread * distance_factor`，模拟远距离精度下降。 |
+
+## 操作手感（Game Feel）
+
+参见 [ADR 029](docs/adr/029-gamefeel-modernization.md)，PRD `.scratch/gamefeel-modernization/PRD.md`。
+
+### 视觉反馈
+
+| 术语 | 定义 |
+|------|------|
+| **Dynamic Crosshair（动态准星）** | Procedural 四线准星（`scripts/dynamic_crosshair.gd`），随移动速度/射击状态/后坐力累积动态扩张收缩。ADS 时完全收缩（隐藏四线，显示小点）。参数：`base_gap=6px` / `max_gap=40px`、扩张速度 12、收缩速度 6。替代原 `TextureRect` 静态跨线。 |
+| **Screen Shake（射击震屏）** | 每次射击时相机的 sin/cos 组合噪声抖动（替代 Perlin noise），振幅 = `Weapon.screen_shake_amplitude`，指数衰减。ADS 时降为 0.3×。与已有近战震屏和落地回弹叠加共存。 |
+| **Hit Marker（命中标记）** | 子弹命中敌人时，在准星位置短暂显示 × 形标记（`scripts/hit_marker.gd`），红色 200ms 淡出 + 短促"叮"音效。多连击自然覆盖。 |
+| **Damage Vignette（受伤渐晕）** | 玩家受伤时屏幕边缘出现红色径向渐变（`scripts/damage_vignette.gd`），强度 = `damage/max_health`（max alpha=0.5），0.5s 淡出。 |
+| **Directional Damage Indicator（受伤方向指示）** | 玩家受伤时屏幕中心短暂显示指向伤害来源的红色箭头（`scripts/damage_direction.gd`），1s 淡出。v1 简化：仅前方受伤有效。 |
+| **Weapon Bob（武器移动摆动）** | 第一人称武器模型在移动时的程序化正弦摆动（`container.position` 叠加 sine 偏移）：水平 sine + 垂直 abs(sine)×2（双峰模拟脚步）。冲刺 ×1.3、蹲伏 ×0.6、ADS ×0.3。 |
+| **Weapon Sway（武器空闲摇摆）** | 武器模型在静止/慢速时的缓慢呼吸式正弦摇摆 + 轻微 z 轴旋转，模拟持枪不稳。速度 1.5Hz，振幅 0.005m。 |
+| **Shell Ejection（弹壳抛射）** | 射击时从抛壳口弹出黄铜色小方块 GPUParticles3D（带重力+自旋），寿命 1.5s，节点池 8 个循环。`ejection_port` 定义在 `Weapon` 资源。 |
+| **Muzzle Flash（枪口闪光增强）** | 已有的 `muzzle.play("default")` + 随机旋转/缩放保持不变，本系统不修改 muzzle flash。 |
+
+### 移动能力
+
+| 术语 | 定义 |
+|------|------|
+| **Sprint（冲刺）** | Hold Shift 触发：移速 ×1.6、FOV 扩张至 85°、脚步音调升高（pitch=1.3）。冲刺中不可射击（自动退出冲刺）。不消耗体力。输入动作 `sprint`。 |
+| **Crouch（蹲伏）** | Hold Ctrl 触发：移速 ×0.5、碰撞体高度缩至 0.6×、相机下移 0.6m、脚步音量降至 -6dB。蹲伏中射击散布 ×0.8（更精准）。站起时 `test_move` 检测头顶空间。输入动作 `crouch`。 |
+| **Jump Buffer（跳跃缓冲）** | 在落地前 150ms 内按下跳跃键，落地瞬间自动触发跳跃。解决"差一点落地被吞跳"的挫败感。 |
+| **Coyote Time（土狼时间）** | 走出平台边缘后 100ms 内仍可跳跃。与 Jump Buffer 配合：缓冲处理"早按"、土狼处理"晚按"。 |
+
+### 音频反馈
+
+| 术语 | 定义 |
+|------|------|
+| **Reload Sound（换弹音效）** | `Weapon` 资源新增 `sound_reload: String` 字段。换弹开始时播放，空字符串 = 使用 fallback `sounds/reload_default.ogg`（通用换弹声）。 |
 
 ## 地图系统
 
@@ -61,14 +97,14 @@
 
 | 术语 | 定义 |
 |------|------|
-| **Step（台阶）** | 垂直高度差 **< 0.3m** 的小高差。玩家和怪物均可不跳跃直接通过（自动登高）。来源示例：人行道边缘（curb，典型 0.1-0.2m）、[platform.tscn](file:///e:/work/sp/Starter-Kit-FPS/objects/platform.tscn) 的 0.2m 段。 |
-| **Wall（墙）** | 垂直高度差 **≥ 0.3m** 的高差。阻挡玩家（须跳跃，玩家有二段跳可越过）和怪物（不可达）。来源示例：[wall_low.tscn](file:///e:/work/sp/Starter-Kit-FPS/objects/wall_low.tscn) 顶部 ~1m、[platform.tscn](file:///e:/work/sp/Starter-Kit-FPS/objects/platform.tscn) 的 0.3m 段（0.2→0.5m 之间）。 |
-| **step_height（台阶高度阈值）** | 全局浮点参数，默认 `0.3`。区分 Step 与 Wall 的唯一依据。玩家和怪物共用此参数（与"统一可通行"设计决定一致）。**实现位置：** autoload `StepConstants`，定义在 [scripts/step_constants.gd](file:///e:/work/sp/Starter-Kit-FPS/scripts/step_constants.gd) 的 `STEP_HEIGHT` 常量。引用方式：`StepConstants.STEP_HEIGHT`。 |
+| **Step（台阶）** | 垂直高度差 **< 0.3m** 的小高差。玩家和怪物均可不跳跃直接通过（自动登高）。 |
+| **Wall（墙）** | 垂直高度差 **≥ 0.3m** 的高差。阻挡玩家（须跳跃）和怪物（不可达）。 |
+| **step_height（台阶高度阈值）** | 全局浮点参数，默认 `0.3`。区分 Step 与 Wall 的唯一依据。实现位置：autoload `StepConstants`（`scripts/step_constants.gd`）。 |
 | **Auto-Step（自动登高）** | 角色在水平移动中遇到 ≤ step_height 的高差时，自动抬升到该高度而无需跳跃的机制。Godot 4 默认 `floor_snap_length=0.3` 仅处理"下坡吸附"，不处理"上坡登高"，需要自定义实现。 |
 
 ## 角色导航 / NavMesh
 
-参见 [ADR 003](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/003-step-and-monster-navigation.md)。
+参见 ADR 003b。
 
 | 术语 | 定义 |
 |------|------|
@@ -82,39 +118,35 @@
 
 | 术语 | 定义 |
 |------|------|
-| **Hit Flash（命中变色）** | 怪物受到伤害瞬间的视觉反馈：受击时模型材质临时染**红**并在 ~0.12s 内淡出，让玩家清晰感知"打中了"。作为本次新增的唯一反馈通道，统一接入三种怪物（`monster_melee`、`monster_ranged`、`enemy`）。实现见独立模块 `scripts/hit_feedback.gd` 的静态方法 `HitFeedback.flash(target)`（参见 [ADR 005](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/005-hit-feedback-module.md)）。 |
-| **hit_feedback.gd** | 独立的受击反馈静态类脚本（`scripts/hit_feedback.gd`），提供 `HitFeedback.flash(target)`。`target` 为怪物节点；内部自动定位其可视模型（优先 `Model` 子节点，否则取节点自身的 MeshInstance3D），对其下所有材质临时染色后淡出。与 `combat_utils.gd` 平级、互不依赖。 |
-| **Hit Feedback（受击反馈）** | 怪物被击中时给玩家的可感知信号总称。当前项目仅含 Hit Flash（视觉变色）+ 既有音效 `enemy_hurt.ogg` + melee/ranged 既有微弱 scale 形变；已明确**不**包含击退（Knockback）与受击硬直（Hitstun），二者会改变 AI 物理/行为，留作未来可选进阶。 |
+| **Hit Flash（命中变色）** | 怪物受到伤害瞬间的视觉反馈：模型材质临时染红并在 ~0.12s 内淡出。统一接入三种怪物。参见 ADR 005。 |
+| **Hit Feedback（受击反馈）** | 怪物被击中时给玩家的可感知信号总称。当前仅含 Hit Flash（视觉变色）+ 既有音效 + 微弱 scale 形变。明确不包含击退与受击硬直。 |
 
 ## 近战系统（Melee）
 
 | 术语 | 定义 |
 |------|------|
-| **Melee（近战）** | 玩家对怪物发动的近身攻击，**与远程武器（`Weapon`/弹体）完全解耦**：由独立的输入动作触发，不占用 `weapons` 数组槽位、不参与弹药/换弹体系。参见 [ADR 006](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/006-melee-as-independent-system.md)。命中检测复用三种怪物已有的 `damage(amount)` 接口；**注：** `monster_melee.tscn` 原 `HitArea` Area3D 节点已在 T2 中删除（`monster_melee.gd::_deal_damage()` 实际用距离判定而非 Area3D 监听，该节点曾是"声明而未使用"的死代码）。玩家近战的 Area3D + `get_overlapping_bodies()` 是项目内的**首次**实现。 |
-| **Melee Viewmodel（近战视图模型）** | 近战剑的视图模型（viewmodel），采用**瞬态**方式：平时隐藏，仅在按下近战键的挥砍动画期间显示并随手臂摆动，动画结束自动收回隐藏。与常驻的枪械视图模型（`CameraItem/Container` 内）互不干扰。模型来源为 `quaternius_swords.glb`（需导入项目，建议置于 `models/`）。 |
-| **Melee Hitbox（近战命中区）** | 玩家正前方的 `Area3D` 命中区，仅在挥砍动画的"活跃帧"开启 `monitoring`，通过 `get_overlapping_bodies()` 收集命中怪物，每个敌人**每次挥砍只结算一次伤害**（用 `Set` 去重）。命中后调用怪物的 `damage(melee_damage)` 接口。**注：** 与 `monster_melee` 原 `HitArea` 节点同名但实现模式不同——`monster_melee` 的 HitArea 是死代码（已于 T2 删除），玩家近战才是项目内 Area3D 命中区模式的首个真实用例。 |
-| **Melee Hitbox Orientation（命中区朝向）** | Melee Hitbox 挂在 **Player 根节点**下（不是 Camera），故**只跟随玩家 yaw（水平转向），不跟随相机 pitch（俯仰）**——命中区始终保持水平 slab 形态。定位：中心 `Vector3(0, 0.5, -1.0)`（前方 1m、腰部高度），`BoxShape3D(1.5, 1.5, 2.0)`（宽×高×深），世界坐标覆盖 y∈[0.25, 1.75]。**理由：** 近战短射程+0.5s 冷却下可预测性优于技巧表达；与射击系统（用相机方向+散布做瞄准技巧）差异化才有辨识度；飞行敌人高度本就常超出 1.5m 盒子，pitch 跟踪也未必够得着。被否决的替代：挂在 Camera 下随 pitch 倾斜（盒子会穿地板、多怪叠层误砍），或 pitch-clamped 折中（实现复杂阈值难调）。 |
-| **Melee Tuning（近战调参）** | 初版手感参数（均为 `@export`，可随时调）：`melee_damage = 40`（高于枪械单发，补偿短射程）、`melee_cooldown = 0.7s`（一次挥砍节奏，见 ADR 019）、`melee_reach = 2.0m`（命中区前向深度，与 `monster_melee.attack_range` 一致）、命中区宽度/高度约 `1.5m`（覆盖身前一小片，非全向）。 |
-| **Melee Action（近战输入）** | 新增的独立输入动作，动作名 `melee`，默认绑定 **V 键**（已核查 `project.godot`：W/A/S/D、Space、E、R 已占用，V 空闲无冲突）。与 `shoot`/`aim`/`reload`/`weapon_toggle` 完全解耦，单独触发近战挥砍。 |
+| **Melee（近战）** | 玩家对怪物发动的近身攻击，与远程武器完全解耦：独立输入动作触发，不占用武器槽位、不参与弹药体系。参见 ADR 006。命中检测复用怪物的 `damage(amount)` 接口。 |
+| **Melee Viewmodel（近战视图模型）** | 近战剑的视图模型，采用瞬态方式：平时隐藏，仅在挥砍动画期间显示，动画结束自动收回。与常驻枪械视图模型互不干扰。 |
+| **Melee Hitbox（近战命中区）** | 玩家正前方的 Area3D 命中区，仅在挥砍活跃帧开启 monitoring，每次挥砍每个敌人只结算一次伤害。 |
+| **Melee Hitbox Orientation（命中区朝向）** | Melee Hitbox 挂在 Player 根节点下，只跟随玩家 yaw（水平转向），不跟随相机 pitch。定位：前方 1m、腰部高度，覆盖 y∈[0.25, 1.75]。理由：近战短射程下可预测性优于技巧表达，与射击系统差异化。 |
+| **Melee Tuning（近战调参）** | 初版手感参数（均 `@export` 可调）：`melee_damage = 40`、`melee_cooldown = 0.7s`、`melee_reach = 2.0m`、命中区宽高约 1.5m。 |
+| **Melee Action（近战输入）** | 独立输入动作 `melee`，默认绑定 V 键，与射击/瞄准/换弹/切枪完全解耦。 |
 | **Swing Duration（挥砍总时长）** | 一次挥砍动画从开始到结束的总时长，**0.6s**（ADR 019 从 0.4s 拉长）。必须 ≤ `melee_cooldown`（0.7s），留 0.1s 缓冲避免挥砍未结束冷却已就绪导致的节奏冲突。 |
-| **Active Frames（活跃帧）** | 挥砍动画中**Melee Hitbox 的 `monitoring` 开启、可造成伤害的时间窗**，从挥砍启动后 **0.2s** 到 **0.4s**（共 0.2s，ADR 019 时序）。0–0.2s 为"举剑蓄力+剑滑入"前摇（无伤害），0.4–0.6s 为"剑滑出+收剑"后摇（伤害窗口已过）。monitoring 切换由 `SceneTree.create_timer()` 在 0.2s 开启、0.4s 关闭，**与挥砍 Tween 解耦**——这样挥砍 Tween 被 `kill()`（连续挥砍）时 monitoring 切换仍按时执行，避免 `tween_callback` 因 Tween 被杀而不触发、导致 monitoring 滞留。viewmodel 隐藏仍由 Tween 的 `tween_callback` 在 0.6s 收尾。 |
-| **Melee Viewmodel Transition（近战视图模型过渡）** | 挥砍期间枪与剑的协同过渡动画（ADR 019）：前摇段并行——枪械 Container `position.y` 下沉 `GUN_DROP_Y=-1.0` 出屏底部、剑 viewmodel 从屏外起点（`WINDUP_POS+INTRO_POS_OFFSET` / `WINDUP_ROT+INTRO_ROT_OFFSET`）滑入到 windup 终点；活跃帧段——剑下劈、枪保持下沉位；后摇段并行——剑滑出屏外、枪 `position.y` 回升复位。过渡期间 `_melee_active=true`，`_process` 中跳过 container lerp 让 Tween 完全控制。剑初始变换在 `_ready()` 缓存为 `_melee_sword_init_pos` / `_melee_sword_init_rot`，`action_melee()` 入口强制重置到该基准防连续挥砍残留与漂移。 |
-| **Swing Animation Style（挥砍动画样式）** | 采用**下劈（Downward Slash）**：剑从右上向左下划过屏幕。前摇 0.2s 把剑举到右上（同时从屏外滑入）→ 活跃帧 0.2s 划到左下 → 后摇 0.2s 收回隐藏（同时滑出屏外）。用单个 Tween 同时 tween `rotation_degrees` 和 `position` 实现，无 AnimationPlayer 依赖。**选此方案的理由：** 第一人称视角下下劈视觉冲击最强（剑尖从视野上方划到下方）；与"挥砍"语义最贴合（横扫视觉弱、突刺像长矛）；与 Q1 时间窗天然契合。被否决的替代：横扫（FP 下视觉弱）、突刺（不像剑）、左右交替变体（v1 不必要）。过渡动画时序详见 ADR 019。 |
-| **Melee-Reload Independence（近战换弹并发）** | 近战挥砍与换弹**互不阻塞**：换弹中按 V 可触发挥砍，挥砍中按 R 可触发换弹。理由：ADR 006 的核心就是近战与 `Weapon`/弹药体系解耦——若近战被换弹阻塞就破坏解耦语义。换弹是枪的事，近战是手的事，两套独立状态机并行运行。冷却（`melee_cooldown`）只约束近战自身，不查 `is_reloading`；换弹逻辑（`action_reload`/`_step_reload`）不查近战状态。 |
-| **Melee Hitbox Wall Piercing（近战命中区穿墙语义）** | v1 命中结算用 `has_method("damage")` 过滤重叠物体——`get_overlapping_bodies()` 返回的 StaticBody3D（墙体、平台）因无 `damage()` 方法自然被跳过，无需 layer/mask 配置。**已知边缘情况**：薄墙后的敌人可能被穿墙砍中（盒子几何上重叠但视线被挡）。v1 不加 RayCast 视线检查（过度工程），记录为未来增强。墙体不会被错误伤害，但也不会阻挡对墙后敌人的伤害。 |
-| **Melee Viewmodel Lifecycle（近战视图模型生命周期）** | Melee Viewmodel 在玩家 `_ready()` 中**实例化一次**，作为 `CameraItem` 的子节点（与 `Container` 平级，不在 Container 内——否则会被 `change_weapon()` 的 `remove_child()` 清掉）。初始 `visible = false`，每次挥砍复用同一实例：show → Tween 挥砍 → hide。**不**每次挥砍重新 instantiate。所有 `MeshInstance3D` 的 `layers = 2`（仅武器相机渲染），与 `change_weapon()` 中枪械模型设置方式一致。 |
-| **Melee Swing Sound（挥砍音效）** | v1 **跳过**——`sounds/` 下无合适素材（只有枪声 `blaster*.ogg`、敌人声 `enemy_*.ogg`、移动声 `jump_*.ogg`/`land.ogg`/`walking.ogg`、切枪 `weapon_change.ogg`，无 whoosh/挥砍声）。T3 中的"可选音效"明确为 v1 不做，留待未来增加 `sword_swing.ogg` 类素材后接入。**不**复用现有音效（语义不符，反而破坏手感）。 |
-| **Melee Cooldown Implementation（近战冷却实现）** | 冷却用**浮点累加器**（`melee_cooldown_remaining: float`，在 `_process(delta)` 中递减），**不**新增 Timer 节点。与现有 `_step_reload(delta)` 的 `reload_time_remaining` 同模式。触发挥砍时设 `melee_cooldown_remaining = melee_cooldown`，每帧 `-= delta`，归零方可再次挥砍。避免向 `player.tscn` 添加 Timer 节点，与 `blaster_cooldown` Timer（射击冷却用）解耦。 |
-| **Melee Slash VFX（近战剑弧特效）** | 近战攻击活跃帧期间的**剑弧拖尾粒子特效**（GPUParticles3D 一次性爆发），直观展示攻击范围。参见 [ADR 020](file:///g:/work/Starter-Kit-FPS/docs/adr/020-melee-slash-vfx.md)。玩家：青白色、挂在 `CameraItem` 下（layer 2，仅第一人称可见）；敌人：红橙色、挂在怪物自身节点下（layer 3，主相机可见）。30 粒子、0.2s 生命周期、additive 发光。由 `MeleeVFX` 静态类（[scripts/melee_vfx.gd](file:///g:/work/Starter-Kit-FPS/scripts/melee_vfx.gd)）统一管理创建与触发。 |
-| **MeleeVFX（近战特效工具类）** | 静态工具类 `MeleeVFX`（[scripts/melee_vfx.gd](file:///g:/work/Starter-Kit-FPS/scripts/melee_vfx.gd)），提供 `create_slash(parent, color, layer, box_extents, local_pos) -> GPUParticles3D` 和 `trigger(particles)` 两个静态方法。统一玩家和敌人的剑弧粒子创建与触发逻辑，避免重复配置代码。 |
-| **Swing Easing（挥砍缓动曲线）** | 挥砍 Tween 三段各自独立的缓动配置，取代默认线性插值。前摇：`TRANS_SINE + EASE_IN`（缓慢蓄力，模拟举剑重量感）；活跃帧：`TRANS_QUART + EASE_OUT`（快速劈下末尾减速，利落打击感）；后摇：`TRANS_QUAD + EASE_IN`（收刀逐渐加速离场）。线性插值是游戏手感的敌人——缺乏缓动的匀速运动看起来像机器人。 |
+| **Active Frames（活跃帧）** | 挥砍动画中 Melee Hitbox 开启、可造成伤害的时间窗：0.2s–0.4s（共 0.2s）。0–0.2s 为前摇（无伤害），0.4–0.6s 为后摇。参见 ADR 019。 |
+| **Melee Viewmodel Transition（近战视图模型过渡）** | 挥砍期间枪与剑的协同过渡（ADR 019）：前摇段枪械下沉出屏 + 剑滑入；活跃帧剑下劈；后摇段剑滑出 + 枪回升复位。 |
+| **Swing Animation Style（挥砍动画样式）** | 采用下劈（Downward Slash）：剑从右上向左下划过屏幕。用单个 Tween 同时 tween rotation 和 position，无 AnimationPlayer 依赖。 |
+| **Melee-Reload Independence（近战换弹并发）** | 近战挥砍与换弹互不阻塞：换弹中可挥砍，挥砍中可换弹。近战与 Weapon/弹药体系完全解耦（ADR 006）。 |
+| **Melee Hitbox Wall Piercing（近战命中区穿墙语义）** | v1 用 `has_method("damage")` 过滤重叠物体，墙体自然被跳过。已知边缘情况：薄墙后敌人可能被穿墙砍中。v1 不加 RayCast 视线检查。 |
+| **Melee Slash VFX（近战剑弧特效）** | 近战攻击活跃帧期间的剑弧拖尾粒子特效（GPUParticles3D）。玩家：青白色（layer 2）；敌人：红橙色（layer 3）。30 粒子、0.2s 生命周期、additive 发光。由 `MeleeVFX` 静态类统一管理。参见 ADR 020。 |
+| **MeleeVFX（近战特效工具类）** | 静态工具类，提供 `create_slash(parent, color, layer, box_extents, local_pos)` 和 `trigger(particles)` 两个静态方法，统一玩家和敌人的剑弧粒子创建与触发。 |
+| **Swing Easing（挥砍缓动曲线）** | 挥砍 Tween 三段各自独立的缓动：前摇 TRANS_SINE+EASE_IN（缓慢蓄力）；活跃帧 TRANS_QUART+EASE_OUT（快速劫下）；后摇 TRANS_QUAD+EASE_IN（收刀加速离场）。 |
 | **Hit-Stop（命中顿帧）** | 近战命中敌人瞬间，`Engine.time_scale` 短暂降至 0.05（约 3 帧的停顿），模拟"砍中实体"的阻滞感。使用 `ignore_time_scale` 计时器在真实时间 ~0.06s 后恢复到 1.0。仅命中时触发，挥空不触发。是动作游戏打击感最核心的单因子之一，给大脑处理反馈的窗口。 |
 | **Melee Hit Shake（近战命中震屏）** | 近战命中时相机短暂随机抖动（峰值 0.04 单位，帧率无关 lerp 衰减，decay 系数 25），叠加在落地回弹之上。沿 x/y 轴随机偏移，模拟冲击力传导到视角。 |
 | **Melee FOV Pulse（近战 FOV 扩张）** | 挥砍期间（`_melee_active`）FOV 目标值从默认 75° 扩张到 80°（+5°），通过 `move_toward` 平滑过渡，挥砍结束后自动缩回。模拟"发力瞬间视野变窄/加速"的生理感受，增加动作速度感。 |
 
 ## 怪物武器与动画（Monster Weapons & Animation）
 
-> **v2 修正**：初版术语基于"怪物 GLB 是静态网格、无骨骼、只能程序化 Tween"的误判，已证伪。两个怪物 GLB 实为**带 30 条命名动画的节点式刚体绑定**（解析 GLB 确认：`attack-melee-right/left`、`attack-kick-right/left`、`holding-right/left/both`、`holding-right-shoot` 等），导入后 GLB 实例自带 `AnimationPlayer`。`import_as_skeleton_bones=false` 仅表示不暴露骨骼节点，不等于无动画。详见 [ADR 008](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/008-monster-weapons-and-animations.md) 顶部修订记录。
+> **v2 修正**：初版术语基于"怪物 GLB 是静态网格、无骨骼、只能程序化 Tween"的误判，已证伪。两个怪物 GLB 实为**带 30 条命名动画的节点式刚体绑定**（解析 GLB 确认：`attack-melee-right/left`、`attack-kick-right/left`、`holding-right/left/both`、`holding-right-shoot` 等），导入后 GLB 实例自带 `AnimationPlayer`。`import_as_skeleton_bones=false` 仅表示不暴露骨骼节点，不等于无动画。详见 ADR 008 顶部修订记录。
 
 | 术语 | 定义 |
 |------|------|
@@ -137,7 +169,7 @@
 
 | 术语 | 定义 |
 |------|------|
-| **Minimap（小地图）** | 屏幕角落的小型俯视地图，显示玩家与周围实体位置。渲染方案见 [ADR 007](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/007-minimap-subviewport-camera.md)：采用**动态俯视相机**，而非静态底图或导航网格可视化。 |
+| **Minimap（小地图）** | 屏幕角落的小型俯视地图，显示玩家与周围实体位置。渲染方案见 ADR 007：采用**动态俯视相机**，而非静态底图或导航网格可视化。 |
 | **Minimap Camera（俯视相机）** | 场景中高处垂直朝下的第二台 `Camera3D`，正交投影，渲染进 `SubViewport`。通过 `cull_mask`/图层控制"哪些节点进小地图"。 |
 | **Minimap Viewport（小地图视口）** | 承载俯视相机渲染的 `SubViewport` 节点。 |
 | **Minimap Texture（小地图纹理）** | `ViewportTexture`，把 `Minimap Viewport` 的渲染结果作为 `TextureRect.texture` 显示到 HUD 角落。 |
@@ -149,22 +181,22 @@
 | **View Radius（视图半径）** | 玩家中心小地图的半覆盖半径（m），即相机正交半高。取代原硬编码 `WORLD_HALF=80` 常数；改为可配置（运行时 `@export` 或常量），与地图尺寸解耦。初值推荐 80m（见 [ADR 026](docs/adr/026-minimap-player-centered-follow.md)）。 |
 | **Minimap Follow（小地图跟随）** | 俯视相机每帧同步玩家 x/z 位置（y 仍高处朝下、朝向固定北朝上）。渲染内容随玩家移动而平移，玩家永远在小地图中心。实现：`camera.global_position.x = player.global_position.x; camera.global_position.z = player.global_position.z`。 |
 | **Minimap Cull Mask（小地图相机剔除掩码）** | 俯视相机 `cull_mask = layer 1`（仅世界/地形）。**不**含 layer 2（武器 viewmodel，天然不进图）。敌人真实 3D mesh 已从 layer 1 挪到 layer 3（见下），故俯视渲染无敌人 blob——blip 由 2D 叠加独立绘制。 |
-| **Minimap Enemy Layer（敌人小地图图层）** | 敌人真实 3D mesh 从默认 **layer 1 挪到 layer 3**，使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染 layers 3–20 故真实 FPS 视野不受影响。实现位置：`monster_melee.gd` / `monster_ranged.gd` 的 `_ready()` 中通过 `model.find_children("*", "MeshInstance3D", true, false)` 遍历并设 `child.layers = 4`（layer 3 的 bitmask 值）。选用运行时设置而非 `.tscn` editable_instance：.glb 实例内 mesh 节点路径不稳定（存在 `character-a` 中间节点），editable_instance 路径易失效；运行时按类型遍历更健壮。 |
-| **Minimap Projection（小地图投影）** | 因玩家中心跟随相机，实体世界 (x,z) → 小地图 UV 为**相对玩家的线性映射**：`uv = (world_pos.xz - player_pos.xz + view_radius) / (2 × view_radius)`，再换算到圆形 `TextureRect` 局部像素坐标放置 2D blip。超出 view_radius 的实体为"图外敌人"，不画在图内、改由屏外威胁指示（见下）表示。 |
+| **Minimap Enemy Layer（敌人小地图图层）** | 敌人真实 3D mesh 从 layer 1 挪到 layer 3，使俯视相机（cull_mask = layer 1）不渲染其顶视 blob；主相机渲染不受影响。blip 由 2D 叠加独立绘制。 |
+| **Minimap Projection（小地图投影）** | 实体世界 (x,z) → 小地图 UV 为相对玩家的线性映射。超出 view_radius 的实体为“图外敌人”，由屏外威胁指示表示。 |
 | **Off-Map Enemy（图外敌人）** | 世界位置距玩家水平距离 > `view_radius` 的敌人。玩家中心视图下不在图内出现，但威胁信息不可丢——由屏外威胁指示（见下）在圆形边缘表示其方向（与可选距离）。 |
-| **Off-Screen Indicator（屏外威胁指示）** | 图外敌人在小地图上圆形边缘的提示标记，通常为指向该敌人方向的箭头/刻度，使"随时知道敌人在哪"的核心价值在玩家中心方案下仍成立（取代原"敌人全显示"在图内全画的做法）。v1 最简：每个图外敌人画一个小三角形箭头在圆形边缘，按类型着色（近战=红、远程=黄），不合并分组、不显示距离/数量。见 [ADR 026](docs/adr/026-minimap-player-centered-follow.md) Q5。 |
-| **Minimap Integration（小地图集成位置）** | 世界侧：俯视相机 + `SubViewport` 加进 `main.tscn`（`Main` 子节点，**不是** Player 下，因相机固定不跟玩家）；UI 侧：圆形 `TextureRect` + blip 层加进 `HUD`（`CanvasLayer`）下的 `Minimap` `Control` 容器；逻辑由新建 `scripts/minimap.gd` 驱动，负责每帧投影实体 (x,z)→UV 并管理 2D blip。 |
+| **Off-Screen Indicator（屏外威胁指示）** | 图外敌人在小地图圆形边缘的提示标记，指向该敌人方向的箭头，按类型着色（近战=红、远程=黄）。参见 ADR 026。 |
+| **Minimap Integration（小地图集成位置）** | 世界侧：俯视相机 + SubViewport 加进 `main.tscn`；UI 侧：圆形 TextureRect + blip 层加进 HUD；逻辑由 `scripts/minimap.gd` 驱动。 |
 
 ## Roguelike 竞技场系统（Roguelike Arena）
 
-参见 [ADR 009](file:///e:/work/sp/Starter-Kit-FPS/docs/adr/009-arena-run-wave-structure.md)。
+参见 ADR 009。
 
 | 术语 | 定义 |
 |------|------|
 | **Arena Run（竞技场一局）** | 玩家在单个固定竞技场中的一次完整游戏会话。以玩家死亡（或主动退出）结束；结束后重置全部本局状态（金币、经验、护盾、弹药等）。一局内怪物按波次刷出。 |
 | **Wave（波次）** | 成组刷出的怪物批次。玩家**清空（全灭）**该批后该波结束、进入间歇。波次编号递增，整体难度随编号上升（Escalation）。 |
-| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**分数预算**第 N 波 = `60 × 1.2^(N-1)`（前波 1.2 倍）；**类型分阶段解锁**——1–3 波：普通女/普通黑女/游戏宅；4–6 波：+警察/律师/日本艺妓/研究员-老人；7–9 波：+牛仔/独眼牛仔/猎人/化学人；10–12 波：+健壮男/机器人-男电/机器人-女心；13+ 波：+驯兽师/忍者。参见 [ADR 018](file:///g:/work/Starter-Kit-FPS/docs/adr/018-score-based-wave-composition.md) 与 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
-| **Monster Cost（怪物分数/成本）** | 每种怪物类型的刷出代价，决定在波次预算中占多少配额。与击杀奖励值一致。由 `ENEMY_CONFIG` 字典数据驱动：普通女/普通黑女=5、警察=6、游戏宅=8、律师/日本艺妓=10、研究员-老人/牛仔=12、独眼牛仔/猎人=14、化学人=15、健壮男=16、机器人-男电=18、机器人-女心=20、驯兽师=22、忍者=25。参见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。 |
+| **Escalation（难度递增）** | 随波次编号上升而提升挑战，双轴：**分数预算**第 N 波 = `60 × 1.2^(N-1)`（前波 1.2 倍）；**类型分阶段解锁**——1–3 波：普通女/普通黑女/游戏宅；4–6 波：+警察/律师/日本艺妓/研究员-老人；7–9 波：+牛仔/独眼牛仔/猎人/化学人；10–12 波：+健壮男/机器人-男电/机器人-女心；13+ 波：+驯兽师/忍者。参见 ADR 018 与 ADR 022。 |
+| **Monster Cost（怪物分数/成本）** | 每种怪物类型的刷出代价，决定在波次预算中占多少配额。与击杀奖励值一致。由 `ENEMY_CONFIG` 字典数据驱动：普通女/普通黑女=5、警察=6、游戏宅=8、律师/日本艺妓=10、研究员-老人/牛仔=12、独眼牛仔/猎人=14、化学人=15、健壮男=16、机器人-男电=18、机器人-女心=20、驯兽师=22、忍者=25。参见 ADR 022。 |
 | **Wave Budget（波次预算）** | 每波可用的总分数，RunDirector 刷怪时从可用类型中随机选取，直到总成本 ≥ 预算。初值 60，每波 ×1.2。纯函数 `wave_budget(wave_number)` 计算。 |
 | **Wave Spawn（波次刷怪）** | 每波怪物在**波开始时一次性全刷**入竞技场；玩家**全灭**该批即视为该波清空、进入 Intermission。无 trickle / 分批刷怪。 |
 | **Intermission（波次间歇）** | 两波之间的短暂停顿状态：**停止刷怪**，下一波由**玩家手动确认**开始（本会话 Q6 定为手动确认）。它本身**不是**消费窗口——金币消费走物理商店摊位（Shop，随时 walk-in），升级卡走 XP 即时暂停；间歇只负责"清场→下一波"的节奏断点。 |
@@ -172,22 +204,23 @@
 | **Gold（金币）** | 最高级货币，1 金 = 100 银 = 10000 铜。商店武器以此定价（3–18 金）。参见 ADR 023。 |
 | **Silver（银币）** | 中级货币，1 金 = 100 银，1 银 = 100 铜。商店手雷以此定价（2–3 银）。参见 ADR 023。 |
 | **Copper（铜币）** | 基础货币，单发手枪弹 = 1 铜。商店弹药捆和击杀奖励以此结算，UI 自动进位显示为金银铜混合格式。参见 ADR 023。 |
-| **Backpack（背包）** | 玩家背负的重量制存储空间，无格子上限，仅有重量上限（初始 80，可升级 +10）。存放子弹、枪械、血包。按 T 键打开背包 UI（暂停），拖动物品到备弹槽；关闭 UI 后进入 1.5s 整理动画（可移动不可射击）。三层弹药流：背包（T键补货）→ 身上备弹槽（R键快速换弹）→ 弹匣。参见 ADR 023。 |
+| **Backpack（背包）** | 玩家背负的重量制存储空间，无格子上限，仅有重量上限（初始 80，可升级 +10）。存放子弹、枪械、血包。按 B 键打开/关闭背包 UI（暂停），拖动物品到备弹槽；关闭 UI 后进入 1.5s 整理动画（可移动不可射击）。三层弹药流：背包（B键补货）→ 身上备弹槽（R键快速换弹）→ 弹匣。所有外部弹药补给（商店购买、宝箱奖励）统一进入背包层，玩家手动分配到备弹槽。参见 ADR 023。 |
 | **Backpack Weight（背包负重）** | 物品重量体系（单位抽象）：手枪弹 0.01/发、步枪弹 0.02/发、霰弹 0.04/发、狙击弹 0.08/发、能量电池 0.03/发、榴弹 0.10/发；枪械整把 3–8；血包 1.5。初始负重上限 80。升级池新增 "+10 背包负重"选项。 |
-| **Ammo Slot（备弹槽）** | 玩家身上 10 个快速取用弹药槽位，可自由分配弹药类型，每槽容量 = 对应武器的一个弹匣量。换弹时从槽中消耗一弹匣填充枪械弹匣。槽位打空后需按 T 键从背包补货。 |
-| **T Key（背包键）** | 新增输入动作 `backpack`，绑定 T 键。按下打开背包 UI（暂停，`PROCESS_MODE_WHEN_PAUSED`），左侧背包物品列表、右侧 10 个备弹槽，拖拽或点击分配。关闭 UI 后 1.5s 整理动画。 |
+| **Ammo Slot（备弹槽）** | 玩家身上 10 个快速取用弹药槽位，可自由分配弹药类型。内部 `remaining` 以弹匣次数为单位（每次换弹 −1），`capacity` = 最大弹匣次数。HUD 显示时换算为实际发数（`remaining × weapon.magazine_size`）。换弹时从槽中消耗一弹匣填充枪械弹匣。槽位打空后需按 B 键从背包补货。 |
+| **B Key（背包键）** | 输入动作 `backpack`，绑定 B 键。按下打开/关闭背包 UI（暂停，`PROCESS_MODE_WHEN_PAUSED`），左侧背包物品列表、右侧 10 个备弹槽，拖拽或点击分配。关闭 UI 后 1.5s 整理动画。 |
+| **T Key（整理键）** | 输入动作 `organize`，绑定 T 键。仅在背包 UI 打开时有效，按下触发"整理并关闭"——关闭背包 UI 并启动 1.5s 整理动画（与 B/ESC 关闭等价的快捷键，但语义是"整理物资"）。 |
 | **gold_cost_per_bullet（单发金价）** | ~~已废弃~~（ADR 022）。|
 | **weapon_cost（武器售价）** | `Weapon` 资源字段（ADR 022/023）：金币定价，范围 3–18 金（原 30–175 ÷10）。 |
 | **ammo_type（弹药类型）** | `Weapon` 资源字段（ADR 022）：该枪使用的弹药类型（`&"手枪弹"` / `&"步枪弹"` / `&"霰弹"` / `&"狙击弹"` / `&"能量电池"` / `&"榴弹"`）。|
-| **Shop（商店 / 摊位）** | 竞技场中固定位置的物理摊位。玩家走入时暂停并打开三区购买 UI：**武器区**（随机展示 3 把枪，金定价 3–18）、**弹药区**（随机 3–4 种弹药捆：手枪弹捆 24 发/24 铜、步枪弹捆 20/60 铜、霰弹捆 8/80 铜、狙击弹捆 4/80 铜、能量电池捆 12/60 铜、榴弹捆 2/100 铜）、**手雷区**（随机 1–2 种：EMP 3 银/破片 2 银）。见 ADR 022/023。 |
-| **XP / Experience（经验）** | 击杀掉落的成长资源，累积达阈值后触发**升级（Level Up）**。采用三选一升级卡模型，见 [ADR 011](file:///g:/work/Starter-Kit-FPS/docs/adr/011-level-up-three-choice-cards.md)。 |
+| **Shop（商店 / 摊位）** | 竞技场中固定位置的物理摊位。玩家走入时暂停并打开三区购买 UI：**武器区**（随机展示 3 把枪，金定价 3–18）、**弹药区**（默认出售全部 6 种弹药捆：手枪弹捆 24 发/24 铜、步枪弹捆 20/60 铜、霰弹捆 8/80 铜、狙击弹捆 4/80 铜、能量电池捆 12/60 铜、榴弹捆 2/100 铜）、**手雷区**（随机 1–2 种：EMP 3 银/破片 2 银）。见 ADR 022/023。 |
+| **XP / Experience（经验）** | 击杀掉落的成长资源，累积达阈值后触发**升级（Level Up）**。采用三选一升级卡模型，见 ADR 011。 |
 | **Level Up（升级）** | XP 累积跨越阈值时触发的成长事件。触发时机：**XP 跨阈值即时暂停**弹三选一卡（本会话 Q5 定为即时暂停，非延迟到间歇）。**升级阈值随等级递增**：第 1 级需 20 XP，之后每级 ×1.3（20→26→34→44…）。每次升级从**升级池**随机抽取 3 个不重复增益呈现给玩家、**选 1 个**立即生效（本局内永久）。 |
 | **Upgrade Pool（升级池）** | 升级增益的定义集合，每项含 `id` / 描述 / 生效参数。升级时从中随机抽 3 个不重复项。共 7 项（ADR 023 新增背包负重）：max_health / shield_regen / damage / move_speed / max_reserve / reload_time / backpack_weight。 |
 | **Upgrade Card（升级卡）** | 一次升级中呈现给玩家的单个增益选项（从升级池抽取）。玩家每级选 1 张。 |
 | **Health Pack（血包）** | 怪物死亡**小概率**掉落的 consumable，拾取后恢复**血量（Health）**。是血量（非护盾）的唯一恢复手段——护盾靠自动恢复，不靠血包。 |
-| **Shield（护盾）** | 玩家前的可再生吸收层，**位于血量之前吸收伤害**：一次伤害先扣护盾，溢出部分才扣血量；护盾在"最后一次受击后 `shield_regen_delay` 秒"开始以 `shield_regen_rate` 自动恢复（战斗中亦可回，不只间歇）。初值：`shield_max = 50`、`shield_regen_delay = 3s`、`shield_regen_rate = 10/s`（均可调）。见 [ADR 010](file:///g:/work/Starter-Kit-FPS/docs/adr/010-shield-absorbs-before-health.md)。 |
-| **Health（血量）** | 玩家底层生命值（`player.gd` 已有 `health: int = 100`）。被护盾吸收后的溢出伤害扣减血量；**不自动恢复**，仅由血包恢复；归零即本局结束（护盾归零不致死）。见 [ADR 010](file:///g:/work/Starter-Kit-FPS/docs/adr/010-shield-absorbs-before-health.md)。 |
-| **Game Over（游戏结束）** | 玩家 `health <= 0` 时本局结束：冻结游戏 → 显示结算界面（存活波数、击杀数、累计金币、达到等级等）→ 提供"重开一局"。取代原 `reload_current_scene()` 的**裸**重置（即"无界面、无反馈"地直接 reload），改为"先显示界面、玩家点重开后再 reload"。重开即全新本局、状态全重置。**累计金币**=本局总赚取（`gold_earned_total`，花掉的也算），非当前余额。见 [ADR 014](file:///g:/work/Starter-Kit-FPS/docs/adr/014-death-game-over-screen.md)。 |
+| **Shield（护盾）** | 玩家前的可再生吸收层，**位于血量之前吸收伤害**：一次伤害先扣护盾，溢出部分才扣血量；护盾在"最后一次受击后 `shield_regen_delay` 秒"开始以 `shield_regen_rate` 自动恢复（战斗中亦可回，不只间歇）。初值：`shield_max = 50`、`shield_regen_delay = 3s`、`shield_regen_rate = 10/s`（均可调）。见 ADR 010。 |
+| **Health（血量）** | 玩家底层生命值（`player.gd` 已有 `health: int = 100`）。被护盾吸收后的溢出伤害扣减血量；**不自动恢复**，仅由血包恢复；归零即本局结束（护盾归零不致死）。见 ADR 010。 |
+| **Game Over（游戏结束）** | 玩家 `health <= 0` 时本局结束：冻结游戏 → 显示结算界面（存活波数、击杀数、累计金币、达到等级等）→ 提供"重开一局"。取代原 `reload_current_scene()` 的**裸**重置（即"无界面、无反馈"地直接 reload），改为"先显示界面、玩家点重开后再 reload"。重开即全新本局、状态全重置。**累计金币**=本局总赚取（`gold_earned_total`，花掉的也算），非当前余额。见 ADR 014。 |
 | **RunDirector（运行编排器）** | 竞技场运行的最高层 seam（新增 `Main` 子节点 + `run_director.gd`）。持有本局状态（`gold` / `xp` / `level` / `wave` / `kills` / `gold_earned_total` / `rng`），负责波次推进、刷怪、清场检测、奖励结算、升级触发、游戏结束。暴露信号：`wave_started` / `wave_cleared(wave_number, cleared_by_timeout)` / `gold_changed` / `xp_changed` / `level_up_offered` / `kills_changed` / `game_over(stats)`。为 `PROCESS_MODE_PAUSABLE`（见 Pause Semantics）。 |
 | **Spawn Point（出生点）** | 竞技场四周预定义的 `Marker3D`（≥ 8 个，挂 `Main/SpawnPoints` 下）。**ADR 025 后降级为兜底**：优先使用 Enemy Spawn Zone（玩家周围 NavMesh 选点），仅在 NavMesh 选点全部失败时回退至此固定出生点逻辑（打乱顺序依次取用 + ±2m 抖动）。 |
 | **monster_type（怪物类型标识）** | 每个怪物脚本顶部 `const MONSTER_TYPE: StringName` 硬编码的类型标识（**不**用 `@export`，避免漏配）。取值与脚本/场景基名一致：`&"monster_melee"` / `&"monster_ranged"` / `&"enemy"`。怪物 `destroy()` 中 `died(monster_type)` 信号携带此值，RunDirector 按此查奖励表。 |
@@ -197,7 +230,7 @@
 | **Health Pack（血包）** | 怪物死亡 10% 概率掉落的 consumable（新建 `health_pack.tscn` Area3D + `health_pack.gd`）。**heal_amount = 25**（`@export`，恢复血量，不影响护盾）。在怪物死亡位置生成（飞行敌人死亡时 RayCast 投影到地面）。`Area3D.body_entered` 检测 `"player"` 组 → 调用 `player.heal(amount)`。**despawn_time = 15s** 后自动 `queue_free()`（最后 3s 闪烁提示）。`PROCESS_MODE_PAUSABLE`（暂停期间计时冻结）。血量（非护盾）的唯一恢复手段。 |
 | **Player.heal(amount)** | `Player` 新增方法：`health = min(health + amount, max_health)`，发 `health_updated` 信号。**不**改护盾、**不**触发 damage 管线。供血包拾取调用。 |
 | **max_health（最大血量）** | `Player` 新增 `@export var max_health: int = 100`（现 `health: int = 100` 无上限字段）。`heal` 与升级 `+20 最大血量` 均受此上限约束。 |
-| **Pause Semantics（暂停语义）** | 四处暂停源（Shop walk-in / Level Up XP 跨阈值 / Game Over 死亡 / Controls Help 按键说明）统一用 `get_tree().paused = true` + `process_mode` 分层：暂停态 UI（Shop/LevelUp/GameOver/ControlsHelp）为 `PROCESS_MODE_WHEN_PAUSED`，Player/Monsters/弹体/血包/HUD/RunDirector 为 `PROCESS_MODE_PAUSABLE`（默认）。进入暂停时 `Input.set_mouse_mode(MOUSE_MODE_VISIBLE)`，退出 `MOUSE_MODE_CAPTURED`。护盾 regen 计时器随 Player 暂停冻结（商店里不回盾）。暂停源互斥：RunDirector 触发前检查 `get_tree().paused`，已暂停则不叠加（死亡优先级最高，会接管并隐藏其它暂停 UI；Controls Help 为最低优先级暂停源，可被任意其它暂停源或玩家主动关闭接管）。见 [ADR 015](file:///g:/work/Starter-Kit-FPS/docs/adr/015-pause-semantics.md) / [ADR 024](file:///g:/work/Starter-Kit-FPS/docs/adr/024-controls-help-overlay.md)。 |
+| **Pause Semantics（暂停语义）** | 四处暂停源（Shop walk-in / Level Up XP 跨阈值 / Game Over 死亡 / Controls Help 按键说明）统一用 `get_tree().paused = true` + `process_mode` 分层：暂停态 UI（Shop/LevelUp/GameOver/ControlsHelp）为 `PROCESS_MODE_WHEN_PAUSED`，Player/Monsters/弹体/血包/HUD/RunDirector 为 `PROCESS_MODE_PAUSABLE`（默认）。进入暂停时 `Input.set_mouse_mode(MOUSE_MODE_VISIBLE)`，退出 `MOUSE_MODE_CAPTURED`。护盾 regen 计时器随 Player 暂停冻结（商店里不回盾）。暂停源互斥：RunDirector 触发前检查 `get_tree().paused`，已暂停则不叠加（死亡优先级最高，会接管并隐藏其它暂停 UI；Controls Help 为最低优先级暂停源，可被任意其它暂停源或玩家主动关闭接管）。见 ADR 015 / ADR 024。 |
 | **Upgrade Stacking（升级叠加语义）** | 升级**可重复选、可叠加**（不同级升级可拿同一项）。**加法类**（`+20 最大血量` / `+5 护盾恢复速率` / `+0.5 移动速度` / `+1 每把枪备弹上限`）线性叠加；**乘法类**（`+15% 伤害` / `-10% 换弹时间`）乘法叠加（×1.15³ / ×0.9³）。`+20 最大血量` 同步回 20 血；`+5 护盾恢复速率` 不立即回盾。"3 个不重复"指本次三张互不相同，不跨级记忆。 |
 | **Player Upgrade Bonus Fields（玩家升级 bonus 字段）** | 升级修改的是 **Player 实例的运行时 bonus 字段**，**不修改 `Weapon` 资源**（`.tres` 全局共享引用，直接改会跨局污染且可能写盘）。字段：`max_health` / `bonus_max_reserve`（有效备弹上限 = `weapon.max_reserve + bonus_max_reserve`）/ `damage_multiplier`（实际伤害 = `weapon.damage × damage_multiplier`）/ `reload_time_multiplier` / `move_speed_bonus` / `shield_regen_rate_bonus`。随场景重置自然清零（配合 `reload_current_scene()` 重开机制，无需手动 reset）。 |
 | **RNG（可注入种子随机数）** | RunDirector 持有 `@export var rng_seed: int = 0`（0 = 随机）+ `var rng: RandomNumberGenerator`，`_ready()` 初始化。供血包掉率（issue 03）、升级抽卡（issue 05）、宝箱抽卡（issue 08）等概率逻辑使用，测试时可注入固定种子断言分布。 |
@@ -208,7 +241,7 @@
 
 # 卡住与挣扎（Stuck & Struggle）
 
-参见 [ADR 016](file:///g:/work/Starter-Kit-FPS/docs/adr/016-stuck-struggle-punishment.md)。
+参见 ADR 016。
 
 | 术语 | 定义 |
 |------|------|
@@ -221,7 +254,7 @@
 
 ## 敌人 AI 系统（Enemy AI）
 
-参见 [ADR 017](file:///g:/work/Starter-Kit-FPS/docs/adr/017-enemy-ai-overhaul.md)。
+参见 ADR 017。
 
 | 术语 | 定义 |
 |------|------|
@@ -242,7 +275,7 @@
 
 ## 敌人跳跃导航系统（Enemy Jump Navigation）
 
-参见 [ADR 021](file:///g:/work/Starter-Kit-FPS/docs/adr/021-enemy-jump-navigation.md)。
+参见 ADR 021。
 
 | 术语 | 定义 |
 |------|------|
@@ -254,7 +287,7 @@
 
 ## 角色化敌人系统（Character-Based Enemies）
 
-参见 [ADR 022](file:///g:/work/Starter-Kit-FPS/docs/adr/022-enemy-weapon-expansion.md)。
+参见 ADR 022。
 
 | 术语 | 定义 |
 |------|------|
@@ -297,8 +330,8 @@
 
 | 术语 | 定义 |
 |------|------|
-| **ammo_reserve（弹药池）** | `Player` 的弹药储备，从各枪独立 `Array[int]` 重构为 `Dictionary[StringName, int]`（ADR 022）。按 6 个弹种键值存储：`手枪弹` / `步枪弹` / `霰弹` / `狙击弹` / `能量电池` / `榴弹`。同一弹种的枪共享备弹池。初始仅 `手枪弹`=36，其余为 0。 |
-| **弹药捆（Ammo Bundle）** | 商店售卖的弹药单位。6 种弹药各有固定捆量：手枪弹捆 24 发/1 金、步枪弹捆 20/2 金、霰弹捆 8/3 金、狙击弹捆 4/4 金、能量电池捆 12/3 金、榴弹捆 2/5 金。每次进店随机展示 3–4 种不重复捆。价格定义见 ADR 022 第 358 行。 |
+| **ammo_reserve（弹药池）** | ~~已废弃~~（三层弹药流重构）。由 `backpack_items` + `ammo_slots` 替代。 |
+| **弹药捆（Ammo Bundle）** | 商店售卖的弹药单位。6 种弹药各有固定捆量：手枪弹捆 24 发/24 铜、步枪弹捆 20/60 铜、霰弹捆 8/80 铜、狙击弹捆 4/80 铜、能量电池捆 12/60 铜、榴弹捆 2/100 铜。商店默认出售全部 6 种（不再随机抽样）。价格定义见 ADR 023。 |
 | **Weapon Slot（武器槽）** | 玩家最多携带 3 把枪（`weapons` 数组最大长度 3）。初始配装：手托手枪-小口径 + 2 空槽。**允许持有重复武器**（3 槽可全装同一把枪）。替换武器时弹药保留（弹药池按弹种维度，不因持枪变化丢失）。 |
 | **Weapon Inspect（武器检视）** | 按 **TAB 键**打开的全屏武器属性面板。三张卡片并排展示 3 个武器槽的完整属性：伤害/DPS/射速/精度条/弹匣/备弹/换弹/弹药类型/耐久条/售价/定位/可靠性★。当前装备武器高亮金边。**对比功能：点击一张卡片固定为"参考"**（蓝边），其余卡片自动显示相对差异——绿色 ▲ 表示更优、红色 ▼ 表示更差。再次点击已固定的卡片取消对比。ESC 关闭。弹药状态实时刷新（开火时同步更新弹匣/备弹数字）。被商店/升级等暂停 UI 打断时自动关闭。实现：`scripts/weapon_inspect_ui.gd` + `scenes/weapon_inspect_ui.tscn`，由 HUD（`scripts/hud.gd`）托管并处理 TAB 输入。 |
 
@@ -306,7 +339,7 @@
 
 | 术语 | 定义 |
 |------|------|
-| **武器库（20 把）** | 从 `kenney_blaster-kit_2.1` 导入的 18 把新枪 + 保留 2 把旧枪（blaster/blaster-repeater）。按 6 种弹药分类：手枪弹 4 把、步枪弹 3 把、霰弹 4 把、狙击弹 2 把、能量电池 6 把、榴弹 1 把。全部参数见 ADR 022 武器参数表。 |
+| **武器库（15 把）** | 从 `kenney_blaster-kit_2.1` 导入的 13 把新枪 + 保留 2 把旧枪（blaster/blaster-repeater）。按 6 种弹药分类：手枪弹 3 把、步枪弹 2 把、霰弹 2 把、狙击弹 2 把、能量电池 5 把、榴弹 1 把。全部参数见 ADR 022 武器参数表。**注：** 素材包中的瞄具/消音器 GLB 属"配件"（ADR 022 out-of-scope），曾误建为 Weapon 资源的 5 个 `.tres` 已删除，武器目录仅含真枪。 |
 | **weapon_cost（武器售价）** | `Weapon` 资源新增字段，范围 30（手托手枪）–175（榴弹发射器）金。商店武器区按此价格出售，宝箱随机武器按稀有度加权抽样（低档 60%/中档 25%/高档 15%）。 |
 | **持续射线枪** | 能量电池弹种的特殊行为武器：开火时持续发射光束（非离散弹体），每 tick 消耗弹药并造成持续伤害。需要新武器行为模式（`weapon_mode = "beam"`），在 P4 工单（issue 15）实现。 |
 | **短柄榴弹发射器** | 榴弹弹种的爆炸武器：发射弹体命中后 AOE 爆炸（`explosion_radius` / `explosion_damage`）。扩展现有弹体系统的爆炸行为，在 P4 工单实现。 |
@@ -334,18 +367,21 @@
 | 挣扎 | **H** | `struggle`（ADR 022 从 G 改） |
 | 手雷投掷 | **G** | `throw_grenade` |
 | 丢枪 | **X** | `drop_weapon` |
-| 背包 | **T** | `backpack`（ADR 023 新增） |
+| 背包 | **B** | `backpack`（ADR 023 新增，B 键打开/关闭） |
+| 整理物资 | **T** | `organize`（ADR 023 新增，T 键整理并关闭背包） |
+| 冲刺 | **Shift** | `sprint`（ADR 029 新增） |
+| 蹲伏 | **Ctrl** | `crouch`（ADR 029 新增） |
 | 按键说明 | **F5** | `controls_help`（ADR 024 新增，暂停态模态面板） |
 
 ## 按键说明面板（Controls Help Overlay）
 
 | 术语 | 定义 |
 |------|------|
-| **Controls Help（按键说明面板）** | 按 F5 弹出的暂停态模态面板，集中展示全部操作键位说明。项目第 4 个暂停源（见 Pause Semantics / ADR 015 / ADR 024）：打开时 `get_tree().paused = true`、鼠标 `MOUSE_MODE_VISIBLE`、面板 `PROCESS_MODE_WHEN_PAUSED`，与背包/商店/升级卡同层；关闭后恢复鼠标捕获回到游戏。仅游戏进行中可用（`get_tree().paused == false`），已在其他暂停态（商店/升级/死亡）时 F5 无效。由 HUD（`scripts/hud.gd`）托管，加载 `scenes/controls_help_ui.tscn` 后 `add_child`、`visible=false` 待命，复用武器检视 UI 的 `_build_*_ui()` 托管模式。脚本 `scripts/controls_help_ui.gd`。 |
-| **controls_help（输入动作）** | 新增输入动作，动作名 `controls_help`，绑定 F5 键（physical_keycode = F5、无修饰键）。面板内键名通过 `InputMap.action_get_events()` + `as_text_physical_keycode()` 动态取出（复刻 `hud._wave_prompt_text()` 写法），键位改绑后说明自动同步、不写死。 |
-| **Controls Help Close（关闭方式）** | 两种关闭路径：(1) 再按 F5 切换关闭（Toggle）；(2) 鼠标点击面板外的暗色背景关闭。**不**用 Esc 关闭（Esc 在暂停语义中已有"退出暂停"含义，面板由 F5 独管开关路径更干净）。 |
-| **Controls Help Key Map（键位中文映射字典）** | 一张手维护的字典，将 InputMap 动作名映射为中文标签与分组（如 `{"move_forward": {label: "前进", group: "移动"}, "shoot": {label: "射击", group: "战斗"}}`），面板渲染时用它生成可读文案 + 从 InputMap 取实时键名。只收录玩家可操作动作的子集（约 20 条），不暴露 `mouse_capture`、`camera_left` 等内部/手柄轴动作。 |
-| **Controls Help Runtime Gate（运行时门控）** | F5 仅当 `get_tree().paused == false` 时响应（与武器检视 TAB 的 `_can_open_weapon_inspect()` 逻辑一致），已在其他暂停态时无效。 |
+| **Controls Help（按键说明面板）** | 按 F5 弹出的暂停态模态面板，集中展示全部操作键位说明。第 4 个暂停源（见 Pause Semantics / ADR 024）。仅游戏进行中可用，已在其他暂停态时 F5 无效。由 HUD 托管。 |
+| **controls_help（输入动作）** | 输入动作 `controls_help`，绑定 F5 键。面板内键名通过 InputMap 动态取出，键位改绑后说明自动同步。 |
+| **Controls Help Close（关闭方式）** | 两种关闭路径：再按 F5 切换关闭；或点击面板外暗色背景关闭。不用 Esc（Esc 在暂停语义中已有“退出暂停”含义）。 |
+| **Controls Help Key Map（键位中文映射字典）** | 手维护的字典，将 InputMap 动作名映射为中文标签与分组，面板渲染时用它生成可读文案。只收录玩家可操作动作的子集（约 20 条）。 |
+| **Controls Help Runtime Gate（运行时门控）** | F5 仅当游戏未暂停时响应，已在其他暂停态时无效。 |
 
 ## 手雷系统（Grenade System）
 
@@ -366,7 +402,7 @@
 
 ## UI 设计系统（UI Design System）
 
-参见 [ADR 027](file:///g:/work/Starter-Kit-FPS/docs/adr/027-ui-modernization-design-system.md)。
+参见 ADR 027。
 
 | 术语 | 定义 |
 |------|------|
@@ -378,7 +414,8 @@
 | **Rajdhani（显示字体）** | OFL 许可的方形几何无衬线字体，作为 UI 的 display + body 主字体。多字重（Light/Medium/SemiBold/Bold）支持标题与正文对比。Valorant Tungsten 字体的免费 OFL 替代，符合战术写实风。存于 `assets/fonts/`。中文回退到 Godot 自带 Noto Sans CJK（Rajdhani 缺中文字形）。 |
 | **JetBrains Mono（等宽数字字体）** | OFL 许可的等宽 tabular 字体，用于弹药数/货币/倒计时等需要对齐的数字。存于 `assets/fonts/`。与 Rajdhani 配套使用：标题与正文用 Rajdhani，数字用 JetBrains Mono。 |
 | **Canvas Items Stretch（画布拉伸模式）** | `project.godot` 的 `window/stretch/mode = "canvas_items"` + `aspect = "expand"` 配置，使 UI 控件随视口尺寸自适应缩放。取代原 1280×720 硬编码像素坐标，支持 1080p/1440p/4K 多分辨率。HUD 元件重构为 `MarginContainer` + `VBoxContainer/HBoxContainer` 锚点布局，移除所有 `offset_left = -220` 等绝对像素硬编码。 |
+| **Full-Rect Modal Root（全屏 Modal 根 Control）** | 全屏 Modal UI 的根 Control 必须在 `_ready()` 中调用 `set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)`。严禁使用 `set_anchors_preset`（只设 anchor 不重置 offset，导致根节点尺寸为 0×0）。仅 `script.new()` 实例化的 UI 需此约定，`.tscn` 加载的不需要。 |
 | **Tactical Realism Style（战术写实风）** | UI 视觉风格锚点，对标 Valorant / CS2 / 使命召唤。特征：低饱和深色底、细字重无衬线、青紫橙红高亮、信息密度高、几乎无装饰、cubic ease-out 动效（无弹性）。与 FPS 严肃射击题材贴合，与已有 VFX 配色天然兼容。被否决的替代：科幻发光风（Cyberpunk/Halo）、卡通扁平风（糖豆人）、暗黑哥特风（艾尔登法环）。 |
-| **UI Modernization Phases（UI 现代化四阶段）** | UI 重构的 4 阶段递进计划（[ADR 027](file:///g:/work/Starter-Kit-FPS/docs/adr/027-ui-modernization-design-system.md)）：Phase 1 基础设施（theme/字体/图标/动效工具，issue 01）/ Phase 2 HUD 现代化（issue 02）/ Phase 3 Modal 屏幕现代化（issue 03）/ Phase 4 测试与文档（issue 04）。每阶段独立可验收，分别对应 `.scratch/ui-modernization/issues/01-04`。 |
+| **UI Modernization Phases（UI 现代化四阶段）** | UI 重构的 4 阶段递进计划（ADR 027）：Phase 1 基础设施 / Phase 2 HUD 现代化 / Phase 3 Modal 屏幕现代化 / Phase 4 测试与文档。每阶段独立可验收。 |
 
 

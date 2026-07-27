@@ -1,3 +1,14 @@
+# ADR 012: 金币按"发"购买备弹
+
+**状态**：已废弃（被 [ADR 022](022-enemy-weapon-expansion.md) + [ADR 023](023-currency-backpack-system.md) 取代）
+
+## 原决策
+
+金币在商店中按"发"购买备弹，每把枪有独立金价 `gold_cost_per_bullet`，受 `max_reserve` 封顶。
+
+## 废弃原因
+
+ADR 022 引入 6 种弹药类型 + 按捆售卖；ADR 023 进一步引入三级货币（金银铜），弹药以铜币定价。`gold_cost_per_bullet` 字段已退役，改为弹药捆模式（手枪弹捆 24 铜、步枪弹捆 60 铜等，详见 ADR 023）。
 # ADR 012: 金币按"发"购买备弹（per-weapon 金价，受 max_reserve 封顶）
 
 ## 决策

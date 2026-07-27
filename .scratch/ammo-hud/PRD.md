@@ -1,3 +1,5 @@
+> **[ARCHIVED]** 本 PRD 对应功能已实现。决策权威见 ADR 004，术语定义见 CONTEXT.md。
+
 # PRD：弹药 HUD 系统
 
 为 FPS 项目新增弹匣+备弹弹药模型与右下角弹药 HUD（含换弹动作）。

@@ -1,3 +1,5 @@
+> **[ARCHIVED]** 本 PRD 对应功能已实现。决策权威见 ADR 020，术语定义见 CONTEXT.md。
+
 Status: ready-for-agent
 
 # PRD：近战剑弧粒子特效 —— 攻击范围可视化

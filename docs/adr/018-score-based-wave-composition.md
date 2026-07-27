@@ -1,5 +1,7 @@
 # ADR 018: 分数制波次组成 —— 取代固定数量 + 固定比例
 
+> **修订**：本 ADR 的分数预算公式（`60 × 1.2^(N-1)`）仍有效。但 `MONSTER_COST` 硬编码 3 条目已被 [ADR 022](022-enemy-weapon-expansion.md) 的 `ENEMY_CONFIG` 数据驱动 16 角色版取代；类型解锁表亦由 ADR 022 重新定义。
+
 ## 决策
 
 波次怪物组成从**固定数量 + 固定比例**改为**分数预算制**：
@@ -17,7 +19,7 @@
 2. **固定比例僵硬**——每波 melee/ranged/enemy 比例机械固定，缺乏变化，玩家会感到重复。
 3. **扩展性差**——未来新增怪物类型时，需重新设计比例表，且旧类型比例需手动调整。
 
-用户提出分数制方案：每种怪物有"分数"（成本），每波有总预算 ×1.5 递增，随机凑到接近预算。这解决了上述三个问题。
+用户提出分数制方案：每种怪物有"分数"（成本），每波有总预算随机凑到接近预算（初始提议 ×1.5 递增，**最终裁定 ×1.2**）。这解决了上述三个问题。
 
 ## 替代方案
 
@@ -30,7 +32,6 @@
 
 ## 影响
 
-- **代码**：`run_director.gd` 中 `compute_wave_composition` 重写，新增 `MONSTER_COST` 常量、`wave_budget()` 和 `_available_types()` 函数。旧固定比例逻辑移除。
-- **测试**：`test_run_director.gd` 和 `test_monster_fall_death.gd` 中断言从固定数量改为预算约束 + 类型约束。波 1 断言从 4 只改为 6 只（预算 30 / 成本 5）。
-- **词汇表**：`CONTEXT.md` 新增 `Monster Cost`、`Wave Budget` 术语，更新 `Escalation` 定义。
-- **平衡**：波 1 从 4 只 melee 变为 12 只（+200%），后期波次因 1.5× 指数增长远超原线性方案。基础预算 60 为 `@export` 可调备选（当前为 hardcoded 常量，但可通过改为 `@export var wave_budget_base: int = 60` 实现配置化，留作未来增强）。
+- **代码**：~~`MONSTER_COST` 常量~~ → 已被 ADR 022 的 `ENEMY_CONFIG` 数据驱动字典取代。`wave_budget()` 纯函数保留。
+- **测试**：波次断言从固定数量改为预算约束 + 类型约束。
+- **词汇表**：`CONTEXT.md` 的 `Monster Cost`、`Wave Budget`、`Escalation` 术语以 ADR 022 的 16 角色版为准。

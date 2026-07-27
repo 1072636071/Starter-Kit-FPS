@@ -1,3 +1,5 @@
+> **[ARCHIVED]** 本 PRD 对应功能已实现。决策权威见 ADR 010，术语定义见 CONTEXT.md。
+
 # 护盾 HUD 信息展示（Shield HUD）
 
 Status: ready-for-agent

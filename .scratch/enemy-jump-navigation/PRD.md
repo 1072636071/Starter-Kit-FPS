@@ -1,3 +1,5 @@
+> **[ARCHIVED]** 本 PRD 对应功能已实现。决策权威见 ADR 021，术语定义见 CONTEXT.md。
+
 # PRD：敌人跳跃导航系统
 
 **Status:** ready-for-agent

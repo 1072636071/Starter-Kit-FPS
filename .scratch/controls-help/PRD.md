@@ -1,3 +1,5 @@
+> **[ARCHIVED]** 本 PRD 对应功能已实现。决策权威见 ADR 024，术语定义见 CONTEXT.md。
+
 # PRD — 按键说明面板（Controls Help Overlay）
 
 Status: ready-for-agent
