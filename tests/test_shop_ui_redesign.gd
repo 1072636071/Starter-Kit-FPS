@@ -27,7 +27,7 @@ func _run_tests() -> void:
 	rd.rng_seed = 42
 	add_child(rd)
 	rd.add_copper(50000)
-	_check(rd.copper == 50000, "rd.copper == 50000")
+	_check(rd.copper == 60000, "rd.copper == 60000 (initial 10000 + 50000)")
 
 	var shop_ui_scene := preload("res://scenes/shop_ui.tscn")
 	var shop_ui: Control = shop_ui_scene.instantiate()
@@ -49,7 +49,7 @@ func _run_tests() -> void:
 		"weapon zone weapons are non-duplicate: %s" % str(weapon_names))
 
 	# === 2. 弹药区：3–4 种不重复弹种 ===
-	var ammo_count := shop_ui._shop_ammo_types.size()
+	var ammo_count: int = shop_ui._shop_ammo_types.size()
 	_check(ammo_count >= 3 and ammo_count <= 4,
 		"ammo zone has 3-4 types (got %d)" % ammo_count)
 	var ammo_names: Array[String] = []
@@ -59,13 +59,13 @@ func _run_tests() -> void:
 		"ammo zone types are non-duplicate: %s" % str(ammo_names))
 
 	# === 3. 手雷区：1–2 种 ===
-	var grenade_count := shop_ui._shop_grenade_types.size()
+	var grenade_count: int = shop_ui._shop_grenade_types.size()
 	_check(grenade_count >= 1 and grenade_count <= 2,
 		"grenade zone has 1-2 types (got %d)" % grenade_count)
 
 	# === 4. 购买手枪弹捆 → 背包增加 24 发 ===
 	# 先把手枪弹加入商店库存（覆盖随机结果）
-	shop_ui._shop_ammo_types = [&"手枪弹"]
+	shop_ui._shop_ammo_types.assign([&"手枪弹"])
 	shop_ui._build_all_zones()
 	player.backpack_items.clear()
 	player.backpack_weight = 0.0
@@ -88,48 +88,47 @@ func _run_tests() -> void:
 		"copper decreased by 24 for pistol ammo (got %d, expected %d)" % [rd.copper, copper_pre - 24])
 
 	# === 5. 满槽买枪 → 替换对话框弹出，确认后旧枪消失新枪入槽 ===
-	# 给玩家塞满 3 把武器
+	# 给玩家塞满 3 把武器（确保不重复，避免替换后仍存在同名武器）
 	var blaster: Weapon = load("res://weapons/blaster.tres")
 	var repeater: Weapon = load("res://weapons/blaster-repeater.tres")
 	player.weapons.clear()
 	player.weapon_durability.clear()
 	player.weapons.append(blaster)
 	player.weapons.append(repeater)
-	player.weapons.append(blaster)  # 第三把也用 blaster
+	player.weapons.append(repeater)  # 第三把用 repeater（与 blaster 不同名）
 	player.weapon_durability.append(blaster.durability_max)
 	player.weapon_durability.append(repeater.durability_max)
-	player.weapon_durability.append(blaster.durability_max)
+	player.weapon_durability.append(repeater.durability_max)
 
 	_check(player.weapons.size() == 3, "player has 3 weapons (full slots)")
 
 	# 重建 UI 让满槽状态生效
 	shop_ui._build_all_zones()
 
-	# 验证武器区按钮是 "购买并替换"
+	# 验证武器区按钮是 "购买并替换"（递归查找，适配 UICard 包装结构）
 	var has_replace_btn := false
 	if shop_ui._weapon_zone:
-		for row in shop_ui._weapon_zone.get_children():
-			if row is HBoxContainer:
-				for child in row.get_children():
-					if child is Button and child.name == "ReplaceWeaponBtn":
-						has_replace_btn = true
-						break
+		var btns: Array = shop_ui._weapon_zone.find_children("*", "Button", true, false)
+		for b in btns:
+			if b.name == "ReplaceWeaponBtn":
+				has_replace_btn = true
+				break
 	_check(has_replace_btn == true, "weapon zone shows '购买并替换' when slots full")
 
 	# 弹出替换弹窗
-	var shop_weapon_count := shop_ui._shop_weapons.size()
+	var shop_weapon_count: int = shop_ui._shop_weapons.size()
 	if shop_weapon_count > 0:
 		shop_ui._show_replace_popup(0)
 		_check(shop_ui._replace_popup != null and is_instance_valid(shop_ui._replace_popup),
 			"replace popup appears when clicking '购买并替换'")
 
 		# 确认替换到槽 0
-		var old_weapon_name := player.weapons[0].display_name
+		var old_weapon_name: String = player.weapons[0].display_name
 		shop_ui._confirm_replace(0)
 		_check(player.weapons.size() == 3,
 			"player still has 3 weapons after replace")
 		# 新武器应该是商店的第一把
-		var expected_new := shop_ui._shop_weapons[0].display_name
+		var expected_new: String = shop_ui._shop_weapons[0].display_name
 		_check(player.weapons[0].display_name == expected_new,
 			"slot 0 replaced with new weapon: expected '%s', got '%s'" % [expected_new, player.weapons[0].display_name])
 		# 旧武器消失（不在任何槽位中）
@@ -151,6 +150,9 @@ func _run_tests() -> void:
 	# === 6. 关闭商店 ===
 	shop_ui.close()
 	_check(shop_ui.is_open() == false, "shop_ui closed")
+	# 等待关闭动效完成（UIMotion.tween_modal_out 120ms），多等几帧确保 tween 被处理
+	for _i in range(30):
+		await get_tree().process_frame
 	_check(shop_ui.visible == false, "shop_ui hidden after close")
 
 	# 清理
