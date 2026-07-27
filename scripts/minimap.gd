@@ -11,9 +11,11 @@ extends Control
 ## （见 CONTEXT.md「Minimap Projection」、ADR 007「图层过滤」）。
 ## 不按视线/距离过滤（见 CONTEXT.md「Enemy Blip」）。
 
-# 世界范围（与 MinimapCamera 的 ortho size=80、定位原点上方对应）
-const WORLD_HALF := 80.0 # 世界半边长（m）
-const WORLD_SIZE := WORLD_HALF * 2.0 # 160m
+# 小地图视图半径（m）—— 玩家中心跟随的覆盖半径
+# 与 MinimapCamera.size=160 对齐：Godot 正交 size 为视口全高，
+# size=160 → 半高 80m → 世界覆盖 ±80m（即 view_radius=80）
+# 可在运行时按需调整（如缩放）
+var view_radius: float = 80.0
 
 # blip 视觉参数
 const PLAYER_COLOR := Color(0.85, 1.0, 0.95, 1.0) # 亮青白
@@ -40,10 +42,15 @@ const RANGED_SCRIPT_PATH := "res://objects/monster_ranged.gd"
 var _player: Node3D = null
 var _monsters: Array = [] # Array[CharacterBody3D]
 var _count_font: Font = null # 敌人计数文字字体（用默认主题字体）
+var _minimap_camera: Camera3D = null # MinimapViewport 的俯视正交相机
 
 func _ready() -> void:
 	# 玩家：经 "player" group 查找（main.tscn 中 Player 节点 groups=["player"]）
 	_player = get_tree().get_first_node_in_group("player")
+	# MinimapCamera：/root/Main/MinimapViewport/MinimapCamera
+	_minimap_camera = get_node_or_null("/root/Main/MinimapViewport/MinimapCamera")
+	if not _minimap_camera:
+		push_warning("[minimap] MinimapCamera not found at /root/Main/MinimapViewport/MinimapCamera — camera-follow disabled")
 	# 怪物：Monsters 节点的直接子节点（main.tscn 中 Main/Monsters/{MeleeA,...}）
 	# 用延迟一帧查找，确保场景树已完全实例化
 	call_deferred("_refresh_monsters")
@@ -79,15 +86,25 @@ func _scan_character_bodies(root: Node) -> void:
 		_scan_character_bodies(c)
 
 func _process(_delta: float) -> void:
+	# 相机跟随玩家 x/z（y 保持 80 俯视高度，朝向不变 north-up）
+	if _minimap_camera and is_instance_valid(_minimap_camera) and _player and is_instance_valid(_player):
+		var ppos := _player.global_position
+		_minimap_camera.global_position.x = ppos.x
+		_minimap_camera.global_position.z = ppos.z
 	# 每帧重绘 blip（位置/朝向随玩家与敌人移动）
 	queue_redraw()
 
-## 世界 (x,z) → 本 Control 局部像素坐标
+## 世界 (x,z) → 本 Control 局部像素坐标（相对玩家）
 ## 北朝上：world -Z → 图像上方（pixel.y = 0）
 ## 东朝右：world +X → 图像右方（pixel.x = size.x）
+## 投影以玩家位置为中心：uv = (world - player + view_radius) / (2 × view_radius)
 func _world_to_pixel(world_x: float, world_z: float) -> Vector2:
-	var uv_x := (world_x + WORLD_HALF) / WORLD_SIZE
-	var uv_y := (world_z + WORLD_HALF) / WORLD_SIZE
+	# is_instance_valid 必须：Godot 4 中 queue_free() 后引用不为 null
+	var player_valid := _player != null and is_instance_valid(_player)
+	var player_x := _player.global_position.x if player_valid else 0.0
+	var player_z := _player.global_position.z if player_valid else 0.0
+	var uv_x := (world_x - player_x + view_radius) / (view_radius * 2.0)
+	var uv_y := (world_z - player_z + view_radius) / (view_radius * 2.0)
 	return Vector2(uv_x * size.x, uv_y * size.y)
 
 func _draw() -> void:
@@ -121,9 +138,14 @@ func _draw() -> void:
 		alive_count += 1
 		var mpos: Vector3 = m.global_position
 		var pixel := _world_to_pixel(mpos.x, mpos.z)
-		if pixel.distance_to(center) > clip_r:
-			continue
+		var dist_to_center := pixel.distance_to(center)
 		var color := enemy_color(m)
+		if dist_to_center > clip_r:
+			# 屏外敌人：在圆形边缘画方向箭头，指向敌人所在方向
+			var angle: float = atan2(pixel.y - center.y, pixel.x - center.x)
+			var edge_pos := center + Vector2(cos(angle), sin(angle)) * (radius - ENEMY_RADIUS - 1)
+			_draw_edge_indicator(edge_pos, angle, color)
+			continue
 		draw_circle(pixel, ENEMY_RADIUS, color)
 
 	# 3. 圆形边框（draw_arc 沿圆周画线，不受 shader 裁剪影响）
@@ -172,5 +194,15 @@ func _draw_arrow(center: Vector2, yaw_rad: float, arrow_size: float, color: Colo
 	var tip := Vector2(0.0, -arrow_size).rotated(yaw_rad) + center
 	var bl := Vector2(-arrow_size * 0.6, arrow_size * 0.5).rotated(yaw_rad) + center
 	var br := Vector2(arrow_size * 0.6, arrow_size * 0.5).rotated(yaw_rad) + center
+	var pts := PackedVector2Array([tip, br, bl])
+	draw_colored_polygon(pts, color)
+
+## 绘制屏外威胁指示器 —— 小三角形箭头，位于边缘 edge_pos，指向 angle 方向（离圆心）
+## 尺寸约 ENEMY_RADIUS*1.5 外接半径，比玩家箭头小
+func _draw_edge_indicator(edge_pos: Vector2, angle: float, color: Color) -> void:
+	const EDGE_ARROW_SIZE: float = 6.0
+	var tip := edge_pos + Vector2(cos(angle), sin(angle)) * EDGE_ARROW_SIZE
+	var bl := edge_pos + Vector2(cos(angle + PI * 0.65), sin(angle + PI * 0.65)) * EDGE_ARROW_SIZE * 0.6
+	var br := edge_pos + Vector2(cos(angle - PI * 0.65), sin(angle - PI * 0.65)) * EDGE_ARROW_SIZE * 0.6
 	var pts := PackedVector2Array([tip, br, bl])
 	draw_colored_polygon(pts, color)
