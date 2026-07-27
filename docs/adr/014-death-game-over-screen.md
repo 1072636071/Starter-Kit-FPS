@@ -22,3 +22,5 @@
 - 死亡时**冻结（pause）**而非 reload；重开重置全部本局状态。
 - 需要在一局作用域内累积 **run stats**：存活波数、击杀数、累计金币、达到等级。
 - 元进度（C）明确为 v1 之外，不在本次范围。
+
+> 参见 [ADR 027](027-ui-modernization-design-system.md) — UI 现代化设计系统（游戏结束界面重构为 UITheme token + 阶梯式过渡动效）

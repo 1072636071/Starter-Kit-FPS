@@ -441,3 +441,5 @@ const ENEMY_CONFIG := {
 - 武器配件系统（瞄具/消音器/弹匣——GLB 有但机制暂无设计）
 - 持续射线枪的 beam 实现细节（P4 工单内决定）
 - 短柄榴弹发射器的爆炸 AOE 实现细节（P4 工单内决定）
+
+> 参见 [ADR 027](027-ui-modernization-design-system.md) — UI 现代化设计系统（商店/武器检视/背包 UI 重构为 UITheme token + SVG 图标 + UICard）

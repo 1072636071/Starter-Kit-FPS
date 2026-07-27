@@ -140,11 +140,41 @@
 
 ## 实施清单
 
-详细实施清单见 4 个 issue 文件：
+详细实施清单见 7 个 issue 文件（从原始 4 阶段细化为 7 个垂直切片）：
 
-- [`.scratch/ui-modernization/issues/01-theme-foundation.md`](../../.scratch/ui-modernization/issues/01-theme-foundation.md)
-- [`.scratch/ui-modernization/issues/02-hud-modernization.md`](../../.scratch/ui-modernization/issues/02-hud-modernization.md)
-- [`.scratch/ui-modernization/issues/03-modal-screens.md`](../../.scratch/ui-modernization/issues/03-modal-screens.md)
-- [`.scratch/ui-modernization/issues/04-tests-and-docs.md`](../../.scratch/ui-modernization/issues/04-tests-and-docs.md)
+- [`.scratch/ui-modernization/issues/01-theme-infrastructure.md`](../../.scratch/ui-modernization/issues/01-theme-infrastructure.md) — Phase 1：基础设施（theme/字体/图标/动效工具）
+- [`.scratch/ui-modernization/issues/02-hud-modernization.md`](../../.scratch/ui-modernization/issues/02-hud-modernization.md) — Phase 2：HUD 全面现代化
+- [`.scratch/ui-modernization/issues/03-uicard-and-three-choice.md`](../../.scratch/ui-modernization/issues/03-uicard-and-three-choice.md) — Phase 3a：UICard 组件 + 升级/宝箱三选一
+- [`.scratch/ui-modernization/issues/04-shop-ui.md`](../../.scratch/ui-modernization/issues/04-shop-ui.md) — Phase 3b：商店 UI 现代化
+- [`.scratch/ui-modernization/issues/05-weapon-inspect-backpack.md`](../../.scratch/ui-modernization/issues/05-weapon-inspect-backpack.md) — Phase 3c：武器检视 + 背包 UI
+- [`.scratch/ui-modernization/issues/06-controls-help-game-over.md`](../../.scratch/ui-modernization/issues/06-controls-help-game-over.md) — Phase 3d：按键说明 + 游戏结束 UI
+- [`.scratch/ui-modernization/issues/07-smoke-test-and-docs.md`](../../.scratch/ui-modernization/issues/07-smoke-test-and-docs.md) — Phase 4：烟雾测试 + 文档收尾
 
-> 所有设计决策已决议，grill 会话结束。等待用户批准后开始 Phase 1 实施。
+## 实施结果
+
+全部 7 个 issue 已完成，所有验收标准通过。
+
+### 测试验证
+
+| 测试 | 断言数 | 状态 |
+|------|--------|------|
+| `test_ui_theme` | 49 | ALL PASSED |
+| `test_ui_motion` | 18 | ALL PASSED |
+| `test_ui_card` | 37 | ALL PASSED |
+| `test_hud_layout` | 38 | PASS |
+| `test_controls_help` | 33 | ALL PASSED |
+| `test_weapon_inspect_ui` | 26 | ALL PASSED |
+| `test_arena_shield` | 35 | PASS |
+| `test_shop_ui_redesign` | 20 | PASS |
+| `test_ui_smoke` | 40 | ALL PASSED |
+
+**共 296 个断言全部通过，零回归。**
+
+### 交付物
+
+- **基础设施**：`assets/ui.tres`（Theme 资源）+ `scripts/ui_theme.gd`（静态访问器）+ `scripts/ui_motion.gd`（动效工具）+ `scripts/ui_card.gd`（共享卡片组件）
+- **字体**：Rajdhani 4 字重 + JetBrains Mono 2 字重（OFL 许可）
+- **图标**：11 个 Lucide SVG 图标（MIT 许可）
+- **现代化 UI**：7 个 UI 脚本全部引用 UITheme token，emoji 全部替换为 SVG 图标
+- **拉伸模式**：`project.godot` 切换为 `canvas_items` + `expand`
+- **烟雾测试**：`tests/test_ui_smoke.gd` 验证完整游戏流程 UI 完整性

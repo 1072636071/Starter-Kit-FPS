@@ -51,3 +51,5 @@
 ---
 
 > 所有设计决策已决议，grill 会话结束。实施清单见下方。
+
+> 参见 [ADR 027](027-ui-modernization-design-system.md) — UI 现代化设计系统（按键说明面板重构为 UITheme token + kbd 样式 + UIMotion 动效）
