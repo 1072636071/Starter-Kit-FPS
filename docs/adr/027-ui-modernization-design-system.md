@@ -130,7 +130,7 @@
 
 ### 7. 布局与缩放 ✅
 
-**canvas_items + expand 拉伸 + 锚点容器。** 用户授权"其他问题自行决定"。移除所有 `offset_left = -220` 等绝对像素硬编码，改为 `MarginContainer + VBoxContainer/HBoxContainer` 锚点布局。
+**canvas_items + expand 拉伸 + 锚点容器。** 用户授权"其他问题自行决定"。移除所有 `offset_left = -220` 等绝对像素硬编码，改为 `MarginContainer + VBoxContainer/HBoxContainer` 锚点布局。**全屏 Modal UI 的根 `Control` 必须在 `_ready()` 中调用 `set_anchors_preset(Control.PRESET_FULL_RECT)`**：子节点（`_bg`/`_panel`）使用相对锚点（0..1 / 0.15..0.85），父节点若为 0×0 则子节点也压缩为 0×0，UI 会挤在左上角。此约定由 `controls_help_ui.gd`（F5 按键说明）与 `backpack_ui.gd`（T 背包）的实际 bug 修复共同确立，由 `test_controls_help.gd` 第 9 节 + `test_backpack_ui_layout.gd` 锁定回归（见 CONTEXT.md「Full-Rect Modal Root」）。注意：`weapon_inspect_ui.tscn` 等通过 `.tscn` 加载的 UI 根锚点在场景文件里显式设置，不走此约定；仅 `script.new()` 实例化的 UI 必须在脚本侧调用。
 
 ### 8. 范围与执行顺序 ✅
 
@@ -162,13 +162,16 @@
 | `test_ui_motion` | 18 | ALL PASSED |
 | `test_ui_card` | 37 | ALL PASSED |
 | `test_hud_layout` | 38 | PASS |
-| `test_controls_help` | 33 | ALL PASSED |
+| `test_controls_help` | 36 | ALL PASSED |
 | `test_weapon_inspect_ui` | 26 | ALL PASSED |
 | `test_arena_shield` | 35 | PASS |
-| `test_shop_ui_redesign` | 20 | PASS |
+| `test_shop_ui_redesign` | 30 | PASS |
 | `test_ui_smoke` | 40 | ALL PASSED |
+| `test_backpack_ui_layout` | 2 | ALL PASSED |
 
-**共 296 个断言全部通过，零回归。**
+**共 311 个断言全部通过，零回归。**
+
+> `test_controls_help` 与 `test_backpack_ui_layout` 锁定 Full-Rect Modal Root 约定：通过 `script.new()` 实例化的根 `Control` 必须在 `_ready()` 调用 `set_anchors_preset(Control.PRESET_FULL_RECT)`，否则子节点（`_bg`/`_panel`）相对锚点基于 0×0 父节点导致 UI 挤在屏幕左上角。
 
 ### 交付物
 

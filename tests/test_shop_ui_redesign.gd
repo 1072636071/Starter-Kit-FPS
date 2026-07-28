@@ -48,15 +48,19 @@ func _run_tests() -> void:
 	_check(weapon_names.size() == _unique_count(weapon_names),
 		"weapon zone weapons are non-duplicate: %s" % str(weapon_names))
 
-	# === 2. 弹药区：3–4 种不重复弹种 ===
+	# === 2. 弹药区：默认出售全部 6 种弹种（不再随机抽样）===
 	var ammo_count: int = shop_ui._shop_ammo_types.size()
-	_check(ammo_count >= 3 and ammo_count <= 4,
-		"ammo zone has 3-4 types (got %d)" % ammo_count)
+	_check(ammo_count == 6,
+		"ammo zone has all 6 types (got %d)" % ammo_count)
 	var ammo_names: Array[String] = []
 	for a in shop_ui._shop_ammo_types:
 		ammo_names.append(str(a))
 	_check(ammo_names.size() == _unique_count(ammo_names),
 		"ammo zone types are non-duplicate: %s" % str(ammo_names))
+	# 验证 6 种弹种都在
+	for expected in ["手枪弹", "步枪弹", "霰弹", "狙击弹", "能量电池", "榴弹"]:
+		_check(expected in ammo_names,
+			"ammo zone contains %s" % expected)
 
 	# === 3. 手雷区：1–2 种 ===
 	var grenade_count: int = shop_ui._shop_grenade_types.size()
@@ -154,6 +158,69 @@ func _run_tests() -> void:
 	for _i in range(30):
 		await get_tree().process_frame
 	_check(shop_ui.visible == false, "shop_ui hidden after close")
+
+	# ============================================================
+	# === Regression 测试（修复历史 bug） ===
+	# ============================================================
+
+	# === R1. ScrollContainer 必须垂直 expand_fill，否则 VBoxContainer 给它分配
+	# 最小高度 0，商品区不可见（bug：进入商店后什么商品都看不到）===
+	_check(shop_ui._scroll.size_flags_vertical == Control.SIZE_EXPAND_FILL,
+		"regression: scroll size_flags_vertical == SIZE_EXPAND_FILL (invisible items bug)")
+	_check(shop_ui._scroll.size_flags_horizontal == Control.SIZE_EXPAND_FILL,
+		"regression: scroll size_flags_horizontal == SIZE_EXPAND_FILL")
+
+	# === R2. 武器预览 SubViewport 必须拥有独立 World3D，否则 layer 2 模型泄漏
+	# 到主 World3D 被玩家相机渲染（bug：退出商店后有模型遮住相机）===
+	# 重新打开商店以构建武器预览
+	shop_ui.open(player, rd)
+	_check(shop_ui.is_open() == true, "regression: shop reopened for preview tests")
+	var preview_svps: Array = shop_ui.find_children("*", "SubViewport", true, false)
+	var has_own_world := false
+	for svp in preview_svps:
+		if svp.own_world_3d == true:
+			has_own_world = true
+			break
+	_check(preview_svps.size() > 0,
+		"regression: weapon preview SubViewports exist (got %d)" % preview_svps.size())
+	_check(has_own_world == true,
+		"regression: at least one SubViewport has own_world_3d == true (model leak bug)")
+
+	# === R3. 武器预览相机的 basis 已被设置（非恒等），证明 Basis.looking_at
+	# 被调用而非依赖 look_at()（bug: "Node not inside tree. Use look_at_from_position()"）===
+	# 若 look_at() 失败，basis 保持恒等（z=(0,0,1)）；Basis.looking_at 成功后 z 会变化。
+	var preview_cams: Array = shop_ui.find_children("*", "Camera3D", true, false)
+	var cam_basis_set := false
+	for cam in preview_cams:
+		# 相机 at (0,0.3,2.5) 朝向 (0,0.2,0)：z 应从默认 (0,0,1) 变为 ≈(0,0.04,0.999)
+		if not cam.basis.z.is_equal_approx(Vector3(0, 0, 1)):
+			cam_basis_set = true
+			break
+	_check(preview_cams.size() > 0,
+		"regression: preview cameras exist (got %d)" % preview_cams.size())
+	_check(cam_basis_set == true,
+		"regression: camera basis set via Basis.looking_at (look_at 'Node not inside tree' bug)")
+
+	# === R4. 商店可反复进入：关闭后再次 open 应正常显示（bug：进入一次商店后商店没了）===
+	shop_ui.close()
+	for _i in range(30):
+		await get_tree().process_frame
+	_check(shop_ui.is_open() == false, "regression: shop closed for reopen test")
+
+	shop_ui.open(player, rd)
+	_check(shop_ui.is_open() == true, "regression: shop reopened (shop disappearing bug)")
+	_check(shop_ui.visible == true, "regression: shop visible after reopen")
+	# 验证三区在重新打开后被重建
+	_check(shop_ui._weapon_zone != null and is_instance_valid(shop_ui._weapon_zone),
+		"regression: weapon zone rebuilt after reopen")
+	_check(shop_ui._ammo_zone != null and is_instance_valid(shop_ui._ammo_zone),
+		"regression: ammo zone rebuilt after reopen")
+	_check(shop_ui._grenade_zone != null and is_instance_valid(shop_ui._grenade_zone),
+		"regression: grenade zone rebuilt after reopen")
+
+	shop_ui.close()
+	for _i in range(30):
+		await get_tree().process_frame
 
 	# 清理
 	shop_ui.queue_free()

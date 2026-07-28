@@ -38,9 +38,8 @@ func _run_tests() -> void:
 			_check(cam.cull_mask == 1, "MinimapCamera cull_mask = 1 (layer 1 only, got %d)" % cam.cull_mask)
 			# 6. 正交全高 = 160m（Godot 4 中 size 为视口全高）→ 半高 80m → 覆盖 ±80 世界
 			_check(abs(cam.size - 160.0) < 0.01, "MinimapCamera ortho size = 160 (full height, got %f)" % cam.size)
-			# 7. 位于世界中心正上方（x≈0, z≈0, y>0）
-			_check(abs(cam.global_position.x) < 0.01, "MinimapCamera x = 0 (got %f)" % cam.global_position.x)
-			_check(abs(cam.global_position.z) < 0.01, "MinimapCamera z = 0 (got %f)" % cam.global_position.z)
+			# 7. 相机跟随玩家 x/z（玩家初始位置 (6,0,6)），y 保持 80 俯视高度
+			# 注意：T5 后相机每帧跟随玩家，此处仅验证相机在场景中且 y>50
 			_check(cam.global_position.y > 50.0, "MinimapCamera y above world (got %f)" % cam.global_position.y)
 			# 8. 相机朝下（本地 -Z → 世界 -Y）
 			var forward := -cam.global_transform.basis.z

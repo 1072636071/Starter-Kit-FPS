@@ -9,7 +9,9 @@
 script = ExtResource("3_script")
 model = ExtResource("2_glb")
 albedo_texture = ExtResource("4_colormap")
-rotation = Vector3(0, 180, 0)
+position = Vector3(0, 0.45, 0)
+rotation = Vector3(0, 0, 0)
+scale = Vector3(3.48, 3.48, 3.48)
 muzzle_position = Vector3(0.1, -0.4, 1.5)
 cooldown = 1.5
 spread = 3.0

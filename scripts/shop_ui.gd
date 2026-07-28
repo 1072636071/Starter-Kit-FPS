@@ -14,6 +14,7 @@ extends Control
 ##   - 弹药：backpack_add(type, "ammo", bundle_amount, weight)
 ##   - 手雷：grenades[type] += 1（上限 max_grenades）
 
+signal opened
 signal closed
 
 # ============================================================
@@ -61,11 +62,13 @@ var _bg_overlay: ColorRect
 var _balance_label: Label
 
 # UI 根节点引用
+# 注：@onready 按声明顺序初始化，_close_btn 必须在 _title_bar 之前
+# （_build_title_bar 会把 _close_btn 作为末尾子节点加入）
 @onready var _panel: PanelContainer = _build_panel()
 @onready var _scroll: ScrollContainer = _build_scroll()
 @onready var _content: HBoxContainer = _build_content()
-@onready var _title_bar: HBoxContainer = _build_title_bar()
 @onready var _close_btn: Button = _build_close_button()
+@onready var _title_bar: HBoxContainer = _build_title_bar()
 
 # 三个区的容器引用（每次 open 重建）
 var _weapon_zone: VBoxContainer
@@ -81,7 +84,9 @@ func _ready() -> void:
 	_bg_overlay = ColorRect.new()
 	_bg_overlay.color = UITheme.COLOR_BG_BASE
 	_bg_overlay.color.a = 0.80
-	_bg_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# 用 set_anchors_and_offsets_preset 而非 set_anchors_preset：后者保留当前 size=0
+	# 作为 offset，导致 offset_right=-parent_width，遮罩尺寸为 0（不会挡住背景）。
+	_bg_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bg_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_bg_overlay)
 
@@ -92,7 +97,7 @@ func _ready() -> void:
 	panel_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(panel_vbox)
 
-	# 标题栏
+	# 标题栏（含关闭按钮）
 	panel_vbox.add_child(_title_bar)
 	# 分隔线
 	var sep := HSeparator.new()
@@ -102,9 +107,8 @@ func _ready() -> void:
 	panel_vbox.add_child(_scroll)
 	_scroll.add_child(_content)
 
-	# 关闭按钮（绝对定位在面板右上角）
-	_panel.add_child(_close_btn)
-
+	# 关闭按钮作为 title_bar 末尾子节点（HBoxContainer 尊重 minimum_size，
+	# 不会像 PanelContainer 那样把按钮 stretch 到内容区）。详见 _build_title_bar。
 	add_to_group("shop_ui")
 
 func _process(delta: float) -> void:
@@ -155,6 +159,9 @@ func open(player: Node3D, run_director: Node) -> void:
 	# 打开动效：scale 0.96→1.0 + fade-in
 	UIMotion.tween_modal_in(self)
 
+	# 通知 HUD 等监听者：商店已打开（用于隐藏小地图等模态互斥 UI）
+	opened.emit()
+
 	if _run_director and _run_director.has_signal("currency_changed"):
 		if not _run_director.currency_changed.is_connected(_on_currency_changed):
 			_run_director.currency_changed.connect(_on_currency_changed)
@@ -181,9 +188,10 @@ func _generate_shop_stock() -> void:
 	var all_weapons: Array[Weapon] = _scan_weapon_tres_files()
 	_shop_weapons.assign(_pick_random_n(all_weapons, 3, rng))
 
-	# --- 弹药区：随机抽 3–4 种不重复弹种 ---
-	var ammo_count := rng.randi_range(3, 4)
-	_shop_ammo_types.assign(_pick_random_n(ALL_AMMO_TYPES, ammo_count, rng))
+	# --- 弹药区：默认出售全部 6 种弹种（用户需求：商店默认出售所有种类的弹药）---
+	# 顺序固定按 ALL_AMMO_TYPES（手枪弹 / 步枪弹 / 霰弹 / 狙击弹 / 能量电池 / 榴弹），
+	# 不再随机抽样，确保玩家随时可补满任意弹种。
+	_shop_ammo_types.assign(ALL_AMMO_TYPES)
 
 	# --- 手雷区：随机 1–2 种 ---
 	var grenade_types: Array[StringName] = [&"emp", &"frag"]
@@ -238,6 +246,10 @@ func _build_scroll() -> ScrollContainer:
 	s.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	s.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	s.mouse_filter = Control.MOUSE_FILTER_PASS
+	# 在 panel_vbox (VBoxContainer) 内必须显式 expand_fill，否则 VBoxContainer
+	# 给 ScrollContainer 分配的最小高度为 0，导致 _content 不可见（商品区空白）。
+	s.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return s
 
 func _build_content() -> HBoxContainer:
@@ -297,6 +309,11 @@ func _build_title_bar() -> HBoxContainer:
 	_balance_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(_balance_label)
 
+	# 关闭按钮（title_bar 末尾，由 HBoxContainer 尊重 32×32 minimum_size，
+	# 不会被 PanelContainer stretch 到面板内容区。曾作为 _panel 直接子节点导致
+	# 按钮 1153×1000 覆盖整个购买 UI 的 bug 已修复）
+	bar.add_child(_close_btn)
+
 	return bar
 
 func _build_close_button() -> Button:
@@ -304,15 +321,8 @@ func _build_close_button() -> Button:
 	b.text = "✕"
 	b.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_LG)
 	b.custom_minimum_size = Vector2(32, 32)
-	# 绝对定位：面板右上角
-	b.anchor_left = 1.0
-	b.anchor_right = 1.0
-	b.anchor_top = 0.0
-	b.anchor_bottom = 0.0
-	b.offset_left = -40
-	b.offset_right = -8
-	b.offset_top = 8
-	b.offset_bottom = 40
+	# 在 title_bar (HBoxContainer) 中保持 32×32，不被垂直拉伸到 title_bar 高度
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
 	# 关闭按钮样式
 	var btn_style := StyleBoxFlat.new()
@@ -486,6 +496,10 @@ func _build_weapon_preview(w: Weapon) -> SubViewportContainer:
 	svp.size = WEAPON_PREVIEW_SIZE
 	svp.transparent_bg = true
 	svp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# 关键：SubViewport 默认共享主 World3D，导致内部 weapon preview 模型（layer 2）
+	# 泄漏到主 World3D，被玩家 CameraItem（cull_mask 含 layer 2）渲染叠加到屏幕上。
+	# own_world_3d 让 SubViewport 拥有独立 World3D，与主场景完全隔离。
+	svp.own_world_3d = true
 
 	# 用 SubViewportContainer 包装，使其能参与 UI 布局（SubViewport 不是 Control）
 	var container := SubViewportContainer.new()
@@ -501,22 +515,25 @@ func _build_weapon_preview(w: Weapon) -> SubViewportContainer:
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	cam.cull_mask = 2  # 渲染层 2，与主场景隔离
 	cam.position = Vector3(0, 0.3, 2.5)
-	cam.look_at(Vector3(0, 0.2, 0))
+	# container 在函数返回后才入树，look_at() 要求节点已在树中（用全局坐标）。
+	# 改用 Basis.looking_at() 直接构造朝向（纯数学，无需入树），避免
+	# "Node not inside tree. Use look_at_from_position() instead." 错误。
+	cam.basis = Basis.looking_at(Vector3(0, 0.2, 0) - cam.position)
 	svp.add_child(cam)
 
 	# 灯光
 	var light := DirectionalLight3D.new()
 	light.position = Vector3(2, 3, 3)
-	light.look_at(Vector3(0, 0.2, 0))
 	light.light_energy = 0.8
 	light.light_cull_mask = 2
+	light.basis = Basis.looking_at(Vector3(0, 0.2, 0) - light.position)
 	svp.add_child(light)
 
 	var ambient := DirectionalLight3D.new()
 	ambient.position = Vector3(-2, 1, -1)
-	ambient.look_at(Vector3(0, 0.2, 0))
 	ambient.light_energy = 0.4
 	ambient.light_cull_mask = 2
+	ambient.basis = Basis.looking_at(Vector3(0, 0.2, 0) - ambient.position)
 	svp.add_child(ambient)
 
 	# 旋转根节点（用于缓慢旋转）
@@ -528,6 +545,8 @@ func _build_weapon_preview(w: Weapon) -> SubViewportContainer:
 	if w.model and is_instance_valid(w.model):
 		var model_inst: Node3D = w.model.instantiate()
 		model_inst.name = "WeaponModel"
+		# issue 22：应用 weapon.scale 使新武器在商店预览中尺寸正确（仅 scale，不应用 viewmodel position）
+		model_inst.scale = w.scale
 		# 将模型及其子节点设置到渲染层 2
 		_set_render_layer_recursive(model_inst, 2)
 		rotator.add_child(model_inst)
@@ -810,6 +829,7 @@ func _buy_weapon(shop_idx: int) -> void:
 
 		# 添加到玩家武器数组
 		_player.weapons.append(w)
+		_player.magazine.append(w.magazine_size)
 		_player.weapon_durability.append(w.durability_max)
 		# 送一弹匣量弹药到背包
 		var weight_per_unit: float = _player.ITEM_WEIGHTS.get(w.ammo_type, 0.01)
@@ -852,7 +872,8 @@ func _show_replace_popup(shop_idx: int) -> void:
 	var popup_overlay := ColorRect.new()
 	popup_overlay.color = UITheme.COLOR_BG_BASE
 	popup_overlay.color.a = 0.95
-	popup_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# 用 set_anchors_and_offsets_preset 而非 set_anchors_preset，避免 size=0 bug。
+	popup_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	popup_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(popup_overlay)
 

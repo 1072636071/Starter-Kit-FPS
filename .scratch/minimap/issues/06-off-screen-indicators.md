@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 Blocked by: 05
 
 # T6 — 屏外威胁指示（圆形边缘方向箭头）
@@ -23,3 +23,17 @@ Blocked by: 05
 - 设计见 [ADR 026](../../docs/adr/026-minimap-player-centered-follow.md) Q5 与 [spec 04](04-player-centered-follow.md)。
 - 箭头绘制复用现有 `_draw_arrow` 方法或新写小三角，放在圆形边缘 `radius - ENEMY_RADIUS` 处。
 - v1 不合并分组、不显示距离数字、不显示数量——只给方向 + 颜色。
+
+### 实现摘要 (2026-07-26)
+
+**改动文件：**
+- `scripts/minimap.gd` — 仅改动 `_draw()` 敌人循环 + 新增 `_draw_edge_indicator()` 方法
+
+**关键变更：**
+1. `_draw()` 敌人循环中：`pixel.distance_to(center) > clip_r` 不再沉默 `continue`，改为计算方向角 `atan2(pixel.y - center.y, pixel.x - center.x)`，在圆形边缘 `radius - ENEMY_RADIUS - 1` 处调用 `_draw_edge_indicator(edge_pos, angle, color)` 画方向箭头
+2. 新增 `_draw_edge_indicator(edge_pos: Vector2, angle: float, color: Color)` — 用 `draw_colored_polygon` 绘制 6px 外接半径的小三角形箭头，尖端指向外侧（敌人在那边），颜色按敌种着色（melee=红 / ranged=黄）
+3. 未修改 `_world_to_pixel`、玩家箭头、边框、计数、camera follow 等 T5 逻辑
+
+**测试结果：**
+- `test_minimap_t1` — PASS（16 项全部通过）
+- `test_minimap_t3` — PASS（26 项全部通过）

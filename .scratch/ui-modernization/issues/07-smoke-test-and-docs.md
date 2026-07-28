@@ -54,13 +54,14 @@
 | `test_controls_help` | 33 | ALL PASSED |
 | `test_weapon_inspect_ui` | 26 | ALL PASSED |
 | `test_arena_shield` | 35 | PASS |
-| `test_shop_ui_redesign` | 20 | PASS |
+| `test_shop_ui_redesign` | 30 | PASS |
 | `test_ui_smoke` | 40 | ALL PASSED |
 
-**共 296 个断言全部通过，零回归。**
+**共 306 个断言全部通过，零回归。**
 
 **备注：**
 - `test_chest_expansion.gd` / `test_ammo_system.gd` / `test_run_director.gd` 存在预存失败（非 UI 现代化引入），与本工单无关
 - 多分辨率验证通过 `canvas_items + expand` 拉伸模式保证，烟雾测试验证了 main.tscn 加载后 HUD 元件挂树完整
 - CONTEXT.md 的 UI 设计系统章节在工单 01 时已预置完成，内容完整无需修改
 - `.scratch/tickets.md` 索引在工单 01 时已更新，内容准确无需修改
+- 2026-07-27：`test_shop_ui_redesign` 断言数 20 → 30（新增 4 组 regression 测试 R1–R4，详见工单 04 "后续 Bug 修复"段），总数相应 296 → 306

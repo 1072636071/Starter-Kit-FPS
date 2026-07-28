@@ -61,6 +61,10 @@ var _look_timer: float = 0.0
 const LOOK_DURATION := 2.0
 var _look_yaw_dir: float = 1.0
 
+# 受击追击宽限期：受击后一段时间内不因丢视线而退出 CHASE
+var _hit_grace_timer: float = 0.0
+const HIT_GRACE_DURATION := 3.0
+
 # 路径节流
 var _path_timer: float = 0.0
 var path_update_interval: float = 0.3
@@ -151,6 +155,17 @@ func _setup_rvo() -> void:
 	nav_agent.velocity_computed.connect(_on_velocity_computed)
 	nav_agent.link_reached.connect(_on_link_reached)
 
+## 落地后将 Y 坐标 snap 到 NavMesh 表面（仅修 Y，避免 X/Z 突变）
+## 见 _physics_process 中落地分支的注释。
+func _snap_to_navmesh_y() -> void:
+	if not nav_agent:
+		return
+	var map: RID = get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return  # map 未就绪，跳过（下次路径查询时 NavServer 会自动 clamp）
+	var closest: Vector3 = NavigationServer3D.map_get_closest_point(map, global_position)
+	global_position.y = closest.y
+
 ## 碰撞层隔离：怪物 layer=2, mask=1（只撞地形，不撞其他怪物）
 func _setup_collision_layers() -> void:
 	collision_layer = 2
@@ -205,6 +220,12 @@ func _physics_process(delta: float) -> void:
 			# 落地后启用 RVO
 			if nav_agent:
 				nav_agent.avoidance_enabled = true
+			# 落地后将 Y 坐标 snap 到 NavMesh 表面
+			# 修复：怪物空中降落 spawn，落地后 Y 与 NavMesh 表面（agent_radius=0.5）
+			# 存在高度差，导致 NavigationAgent3D 的 path_desired_distance 误触发，
+			# 路径首点距离 ≤ 0.5，_get_nav_direction() 返回 ZERO，怪物不动。
+			# 参见社区方案 B（map_get_closest_point）+ 方案 E（落地帧触发）。
+			_snap_to_navmesh_y()
 		return
 
 	# 重力
@@ -217,6 +238,10 @@ func _physics_process(delta: float) -> void:
 	if _los_timer <= 0.0:
 		_los_timer = LOS_INTERVAL
 		_update_los()
+
+	# 受击追击宽限期倒计时
+	if _hit_grace_timer > 0.0:
+		_hit_grace_timer -= delta
 
 	# 状态转换评估（内部会查 alert，仅 IDLE 态生效）
 	_evaluate_transitions()
@@ -276,21 +301,23 @@ func _evaluate_transitions() -> void:
 
 	match _ai_state:
 		AIState.IDLE:
-			# IDLE → CHASE：被动感知（awareness_range 内直接看到）或警觉传播（alert 事件）
-			# 被动感知仍走视线检测（不穿墙），警觉传播穿墙（声音）
-			if distance < awareness_range and _has_los:
+			# IDLE → CHASE：被动感知（awareness_range 内，仅距离不要求视线）或警觉传播（alert 事件）
+			# 修复：移除 _has_los 依赖——多怪同屏时互相遮挡导致永远无法触发追逐
+			if distance < awareness_range:
 				_change_state(AIState.CHASE)
 			elif AlertSystem.has_alert_nearby(global_position, chase_range):
 				_change_state(AIState.CHASE)
 		AIState.CHASE:
-			if not _has_los:
+			# CHASE → LOST：仅在受击宽限期外且丢失视线时触发
+			# 修复：受击后 3 秒内不因丢视线而退出 CHASE，避免"被打后站着不动"
+			if not _has_los and _hit_grace_timer <= 0.0:
 				_change_state(AIState.LOST)
 			elif distance <= _get_attack_range() and _can_attack:
 				_change_state(AIState.ATTACK)
 		AIState.ATTACK:
 			pass  # 攻击完成后由 _on_attack_finished 切回 CHASE/IDLE
 		AIState.RETREAT:
-			if not _has_los:
+			if not _has_los and _hit_grace_timer <= 0.0:
 				_change_state(AIState.LOST)
 			elif distance > _get_attack_range():
 				_change_state(AIState.CHASE)
@@ -462,6 +489,16 @@ func _select_animation(idle_anim: String) -> void:
 		target = "walk"
 	else:
 		target = idle_anim
+
+	# 降级回退：若 AnimationPlayer 没有该动画则逐级回退
+	if not anim_player.has_animation(target):
+		if target == "run":
+			target = "walk"
+		elif target == "walk":
+			target = idle_anim
+	if not anim_player.has_animation(target):
+		return
+
 	if target != _current_anim:
 		anim_player.play(target)
 		_current_anim = target
@@ -492,11 +529,13 @@ func damage(amount: float):
 		var tween := create_tween()
 		model.scale = Vector3(1.1, 0.9, 1.1)
 		tween.tween_property(model, "scale", Vector3.ONE, 0.15)
-	# 受击唤醒：非缓降阶段 + IDLE/LOST → 立即进 CHASE
-	# 避免怪物落地后即使被玩家射击也毫无反应（见 adr/016 讨论）
-	if not _dropping and _ai_state in [AIState.IDLE, AIState.LOST]:
+	# 受击唤醒：非缓降阶段 + 非 CHASE/ATTACK → 立即进 CHASE
+	# 修复 1：扩展唤醒范围——除 CHASE/ATTACK 外所有状态均可被受击唤醒
+	# 修复 2：启动宽限期，防止 CHASE→LOST 立即覆盖
+	if not _dropping and _ai_state not in [AIState.CHASE, AIState.ATTACK]:
 		if player:
 			_last_known_player_pos = player.global_position
+		_hit_grace_timer = HIT_GRACE_DURATION
 		_change_state(AIState.CHASE)
 	if health <= 0 and not _dead:
 		destroy()

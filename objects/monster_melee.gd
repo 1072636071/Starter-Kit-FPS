@@ -126,10 +126,11 @@ func _deal_damage():
 func _on_attack_finished():
 	_is_attacking = false
 	# 攻击完成后回到 CHASE 或 IDLE
+	# 修复：不再依赖 _has_los，改用距离判断 + 宽限期内保持 CHASE
 	if player:
 		var to_player := player.global_position - global_position
 		to_player.y = 0.0
-		if to_player.length() < chase_range and _has_los:
+		if to_player.length() < chase_range:
 			_change_state(AIState.CHASE)
 		else:
 			_change_state(AIState.IDLE)

@@ -1,8 +1,9 @@
 extends Control
-## ADR 023：T 键背包 UI（UI 现代化 issue 05）
+## ADR 023：B 键背包 UI + T 键整理（UI 现代化 issue 05）
 ##
 ## 左侧：背包物品列表（按类型分组，含重量信息）
 ## 右侧：10 个备弹槽（2×5 网格，可点击分配弹药）
+## B 键 toggle 打开/关闭背包 UI；T 键整理并关闭（语义快捷键）；ESC 关闭
 ## 关闭 UI 后进入 1.5s 整理动画（可移动不可射击）
 ##
 ## UI 现代化：引用 UITheme token，标题加 package 图标，重量 ProgressBar，
@@ -31,6 +32,11 @@ var _selected_slot_idx: int = -1
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	# 根 Control 必须填满视口：子节点 bg(0..1)/panel(0.15..0.85) 使用相对锚点，
+	# 父节点为零尺寸时子节点也为零尺寸，渲染在 (0,0) 左上角（"什么都没有 + UI 在左上角"）。
+	# 必须用 set_anchors_and_offsets_preset 而非 set_anchors_preset：后者保留当前 size=0
+	# 作为 offset，导致 offset_right=-parent_width，根节点尺寸仍为 0。
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	add_to_group("backpack_ui")
@@ -293,8 +299,12 @@ func _refresh_right() -> void:
 			btn.text = "槽 %d\n[空]" % (i + 1)
 			slot_color = Color(UITheme.COLOR_BG_PANEL.r, UITheme.COLOR_BG_PANEL.g, UITheme.COLOR_BG_PANEL.b, 0.9)
 		else:
+			# issue 08：显示实际发数（remaining × magazine_size）
+			var mag_size: int = _get_magazine_size_for_ammo(slot["ammo_type"])
+			var bullet_remaining: int = slot["remaining"] * mag_size
+			var bullet_capacity: int = slot["capacity"] * mag_size
 			var ratio: float = float(slot["remaining"]) / maxf(float(slot["capacity"]), 1.0)
-			btn.text = "槽 %d\n%s\n[%d/%d]" % [i + 1, _ammo_display_name(slot["ammo_type"]), slot["remaining"], slot["capacity"]]
+			btn.text = "槽 %d\n%s\n[%d/%d]" % [i + 1, _ammo_display_name(slot["ammo_type"]), bullet_remaining, bullet_capacity]
 			if ratio > 0.5:
 				slot_color = Color(UITheme.COLOR_ACCENT_PRIMARY.r, UITheme.COLOR_ACCENT_PRIMARY.g, UITheme.COLOR_ACCENT_PRIMARY.b, 0.25)
 			elif ratio > 0.0:
@@ -516,7 +526,7 @@ func _build_weight_bar() -> ProgressBar:
 
 func _build_close_button() -> Button:
 	var b := Button.new()
-	b.text = "关闭并整理 (ESC / T)"
+	b.text = "整理并关闭 (B / T / ESC)"
 	b.add_theme_font_size_override("font_size", UITheme.FONT_SIZE_MD)
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
 	# 关闭按钮样式（accent_primary 半透明）
@@ -541,12 +551,13 @@ func _build_close_button() -> Button:
 	return b
 
 # ============================================================
-# 输入：ESC / T 关闭
+# 输入：B（toggle）/ T（整理）/ ESC 关闭
+# B 键打开/关闭背包（backpack 动作），T 键整理并关闭（organize 动作）
 # ============================================================
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not _open:
 		return
-	if event.is_action_pressed("mouse_capture_exit") or event.is_action_pressed("backpack"):
+	if event.is_action_pressed("mouse_capture_exit") or event.is_action_pressed("backpack") or event.is_action_pressed("organize"):
 		close_and_pack()
 		get_viewport().set_input_as_handled()

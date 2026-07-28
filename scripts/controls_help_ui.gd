@@ -25,7 +25,8 @@ const KEY_MAP: Dictionary = {
 	# 系统
 	"start_wave":      {label = "开始下一波",     group = "系统"},
 	"struggle":        {label = "挣扎脱困",       group = "系统"},
-	"backpack":        {label = "打开背包",       group = "系统"},
+	"backpack":        {label = "打开/关闭背包",  group = "系统"},
+	"organize":        {label = "整理物资",       group = "系统"},
 	"controls_help":   {label = "按键说明",       group = "系统"},
 }
 
@@ -38,6 +39,11 @@ var _panel: Control
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	# 根 Control 必须填满视口：子节点 bg(0..1)/panel(0.2..0.8) 使用相对锚点，
+	# 父节点为零尺寸时子节点也为零尺寸，渲染在 (0,0) 左上角（"什么都没有 + UI 在左上角"）。
+	# 必须用 set_anchors_and_offsets_preset 而非 set_anchors_preset：后者保留当前 size=0
+	# 作为 offset，导致 offset_right=-parent_width，根节点尺寸仍为 0。
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_STOP
 

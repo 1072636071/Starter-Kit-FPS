@@ -87,7 +87,7 @@ func _run_tests() -> void:
 	var player2: CharacterBody3D = player_scene.instantiate()
 	player2.add_to_group("player")
 	add_child(player2)
-	player2.ammo_reserve[&"能量电池"] = 0
+	player2.ammo_reserve[&"能量电池"] = 0  # deprecated field, no effect on new system
 
 	var rd2 := preload("res://scripts/run_director.gd").new()
 	rd2.rng_seed = 7
@@ -117,7 +117,8 @@ func _run_tests() -> void:
 	# 在暂停态下买 5 发（能量电池 1 金/发，gold=50 够）
 	bought = shop_ui2.buy_bullets(0, 5)
 	_check(bought == 5, "bought 5 bullets while paused (got %d)" % bought)
-	_check(player2.get_reserve(player2.weapons[0]) == 5, "pool == 5 after paused purchase (got %d)" % player2.get_reserve(player2.weapons[0]))
+	_check(player2.backpack_items.has(player2.weapons[0].ammo_type),
+		"backpack has ammo after purchase (got keys: %s)" % str(player2.backpack_items.keys()))
 	_check(rd2.gold == 45, "rd2.gold == 45 after 5 bullets (got %d)" % rd2.gold)
 
 	# === 11. 关闭路径：ESC / 关闭按钮 / body_exited 都汇入 shop_ui.close() ===

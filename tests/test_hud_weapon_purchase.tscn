@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://test_hud_weapon_purchase_scene"]
+
+[ext_resource type="Script" path="res://tests/test_hud_weapon_purchase.gd" id="1_test"]
+
+[node name="TestHUDWeaponPurchase" type="Node3D"]
+script = ExtResource("1_test")

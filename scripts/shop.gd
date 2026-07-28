@@ -49,6 +49,15 @@ func _bind_run_director() -> void:
 	for n in get_tree().get_nodes_in_group("run_director"):
 		_run_director = n
 		break
+	# 监听新波次：通知商店 UI 下次打开时刷新库存
+	if _run_director and _run_director.has_signal("wave_started"):
+		if not _run_director.wave_started.is_connected(_on_wave_started):
+			_run_director.wave_started.connect(_on_wave_started)
+
+func _on_wave_started(_wave_number: int) -> void:
+	# 新波次开始 → 通知 ShopUI 下次打开时重新生成库存
+	if _shop_ui and is_instance_valid(_shop_ui) and _shop_ui.has_method("force_refresh_on_next_open"):
+		_shop_ui.force_refresh_on_next_open()
 
 # ============================================================
 # 触发区交互

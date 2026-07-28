@@ -39,8 +39,8 @@ func _run_tests() -> void:
 	# 手雷状态初始化
 	_check(player.grenades.has(&"emp"), "grenades dict has emp key")
 	_check(player.grenades.has(&"frag"), "grenades dict has frag key")
-	_check(player.grenades[&"emp"] == 0, "emp grenades init = 0")
-	_check(player.grenades[&"frag"] == 0, "frag grenades init = 0")
+	_check(player.grenades[&"emp"] == 3, "emp grenades init = 3")
+	_check(player.grenades[&"frag"] == 3, "frag grenades init = 3")
 	_check(player.max_grenades == 5, "max_grenades = 5")
 	_check(player.selected_grenade_type == &"emp", "default grenade type is emp")
 	_check(not player.is_charging_grenade, "not charging by default")

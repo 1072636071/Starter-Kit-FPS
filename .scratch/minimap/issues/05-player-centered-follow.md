@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 Blocked by: 03
 
 # T5 — 玩家中心跟随（相机跟随 + 相对投影 + view_radius）
@@ -24,3 +24,22 @@ Blocked by: 03
 - 设计见 [ADR 026](../../docs/adr/026-minimap-player-centered-follow.md) 与 [spec 04](04-player-centered-follow.md)。
 - 投影从 `(world ± 80)/160` 改为 `(world - player + view_radius) / (2 × view_radius)`。
 - 相机在 `minimap.gd._process()` 中直接拿 `/root/Main/MinimapViewport/MinimapCamera` 设 `global_position.x/z`。
+
+### 实现摘要 (2026-07-26)
+
+**改动文件：**
+- `scripts/minimap.gd` — 核心改动
+- `tests/test_minimap_t1.gd` — 移除相机 x/z 固定原点断言（T5 后相机跟随玩家）
+- `tests/test_minimap_t3.gd` — 玩家移到原点保持旧断言值；怪物计数断言改为适应 headless 空 Monsters
+
+**关键变更：**
+1. `const WORLD_HALF/WORLD_SIZE` → `var view_radius: float = 80.0`
+2. `_ready()` 新增 `_minimap_camera` 引用（路径 `/root/Main/MinimapViewport/MinimapCamera`）
+3. `_process()` 新增相机跟随：`_minimap_camera.global_position.x/z = _player.global_position.x/z`
+4. `_world_to_pixel()` 改为相对玩家投影：`uv = (world - player + view_radius) / (2 * view_radius)`
+5. `_draw()` 敌人循环中 `pixel.distance_to(center) > clip_r` 跳过逻辑不变（超出 view_radius 自然被裁剪）
+6. 玩家 blip 投影后自然在圆心，逻辑保留但结果不变
+
+**测试结果：**
+- `test_minimap_t1` — PASS（16 项全部通过）
+- `test_minimap_t3` — PASS（26 项全部通过）

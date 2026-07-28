@@ -10,7 +10,7 @@
 
 ## 构建内容
 
-重构 `weapon_inspect_ui.gd` + `backpack_ui.gd`，引用 UITheme token，UICard 复用对比卡片，统一动效。TAB 打开武器检视 / T 键打开背包看到全新设计。
+重构 `weapon_inspect_ui.gd` + `backpack_ui.gd`，引用 UITheme token，UICard 复用对比卡片，统一动效。TAB 打开武器检视 / B 键打开背包看到全新设计。
 
 ## 验收标准
 
@@ -20,9 +20,10 @@
 - [x] 背包：全屏 bg_base 80% alpha，中央 bg_panel 面板（70% 视口），左侧物品列表 + 右侧 10 个备弹槽 2×5 网格
 - [x] 重量 ProgressBar：超 80% 变 accent_warning，超 100% 变 accent_danger
 - [x] 底部提示：info 图标 + 操作说明 text_secondary 14pt
-- [x] 关闭按钮 + T 键关闭，整理期间背包图标在 HUD 上 pulse_glow 提示
+- [x] 关闭按钮 + B/T/ESC 键关闭（B 打开/关闭背包，T 整理关闭），整理期间背包图标在 HUD 上 pulse_glow 提示
 - [x] 打开/关闭过渡：`UIMotion.tween_modal_in/out`
 - [x] 测试通过：`test_weapon_inspect_ui` 卡片对比逻辑断言保持
+- [x] 事后修复：根 Control 在 `_ready()` 中调用 `set_anchors_preset(Control.PRESET_FULL_RECT)`，否则子节点（`_bg` 0..1 / `_panel` 0.15..0.85）的相对锚点基于 0×0 父矩形，UI 挤在左上角（见 CONTEXT.md「Full-Rect Modal Root」、ADR 027 第 7 节）
 
 ## 实现说明
 
@@ -41,6 +42,7 @@
 - `_refresh_weight_label()` 重量 ProgressBar 颜色逻辑：超 80% warning / 超 100% danger
 - `open()` / `close_and_pack()` 调用 `UIMotion.tween_modal_in/out`
 - 备弹槽按钮样式按剩余量分色（>50% primary / >0% warning / =0% danger）
+- 事后修复：`_ready()` 增加 `set_anchors_preset(Control.PRESET_FULL_RECT)`——原实现根 Control 未设锚点，子节点相对锚点基于 0×0 父矩形，导致背包 UI 渲染在屏幕左上角而非居中
 
 ### 测试
 - `tests/test_weapon_inspect_ui.gd` 26/26 断言全部通过

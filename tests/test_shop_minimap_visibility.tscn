@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b2k5508xiqckm"]
+
+[ext_resource type="Script" path="res://tests/test_shop_minimap_visibility.gd" id="1_test"]
+
+[node name="TestShopMinimapVisibility" type="Node3D"]
+script = ExtResource("1_test")

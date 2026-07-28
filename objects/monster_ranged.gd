@@ -92,13 +92,15 @@ func _evaluate_transitions() -> void:
 
 	match _ai_state:
 		AIState.IDLE:
-			# IDLE → CHASE：被动感知（awareness_range 内 + 视线）或警觉传播（alert 穿墙）
-			if distance < awareness_range and _has_los:
+			# IDLE → CHASE：被动感知（awareness_range 内，仅距离不要求视线）或警觉传播（alert 穿墙）
+			# 修复：移除 _has_los 依赖——多怪同屏时互相遮挡导致永远无法触发追逐
+			if distance < awareness_range:
 				_change_state(AIState.CHASE)
 			elif AlertSystem.has_alert_nearby(global_position, chase_range):
 				_change_state(AIState.CHASE)
 		AIState.CHASE:
-			if not _has_los:
+			# CHASE → LOST：仅在受击宽限期外且丢失视线时触发
+			if not _has_los and _hit_grace_timer <= 0.0:
 				_change_state(AIState.LOST)
 			elif distance < too_close_distance:
 				_change_state(AIState.RETREAT)
@@ -107,7 +109,7 @@ func _evaluate_transitions() -> void:
 		AIState.ATTACK:
 			pass  # 攻击完成后切回
 		AIState.RETREAT:
-			if not _has_los:
+			if not _has_los and _hit_grace_timer <= 0.0:
 				_change_state(AIState.LOST)
 			elif distance > too_close_distance + 2.0:
 				_change_state(AIState.CHASE)

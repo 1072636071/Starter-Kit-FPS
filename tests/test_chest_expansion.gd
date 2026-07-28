@@ -26,7 +26,9 @@ func before_each() -> void:
 	# 只给 1 把武器（留 2 个空槽）
 	_player.weapons = [_mock_weapon]
 	_player.magazine = [_mock_weapon.magazine_size]
-	_player.ammo_reserve = {&"手枪弹": 36}
+	_player.ammo_reserve = {&"手枪弹": 36}  # deprecated field, kept for compat
+	# issue 08：设置背包弹药以便测试
+	_player.backpack_items = {&"手枪弹": {"type": &"ammo", "count": 36, "weight_per_unit": 0.01}}
 	_player.weapon_durability = [_mock_weapon.durability_max]
 	_player.grenades = {&"emp": 1, &"frag": 0}
 	_player.max_grenades = 5

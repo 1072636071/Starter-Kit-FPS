@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://ban31fohk1r8a"]
+
+[ext_resource type="Script" path="res://tests/test_shop_close_button_size.gd" id="1_test"]
+
+[node name="TestShopCloseBtnSize" type="Node3D"]
+script = ExtResource("1_test")

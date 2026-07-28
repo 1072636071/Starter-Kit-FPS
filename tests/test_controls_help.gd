@@ -83,6 +83,12 @@ func _run_tests() -> void:
 		var events := InputMap.action_get_events(action_name)
 		_check(events.size() > 0, "KEY_MAP action '%s' has InputMap events" % action_name)
 
+	# === 9. 布局：根 Control 必须填满视口 ===
+	# 否则子节点 bg(0..1)/panel(0.2..0.8) 相对零尺寸父节点也为零尺寸，
+	# 渲染在 (0,0) 左上角，玩家看到"什么都没有 + UI 在左上角"。
+	_check(ui.anchor_right == 1.0, "root Control anchor_right == 1.0 (fills viewport width)")
+	_check(ui.anchor_bottom == 1.0, "root Control anchor_bottom == 1.0 (fills viewport height)")
+
 	# === 报告 ===
 	if failures == 0:
 		print("[TEST] ALL PASSED")

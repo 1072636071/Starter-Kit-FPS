@@ -94,7 +94,12 @@ func before_each() -> void:
 	# magazine / weapon_durability 为 Array[int] 强类型
 	var mag_arr: Array[int] = [_weapon_a.magazine_size, _weapon_b.magazine_size]
 	_player.magazine = mag_arr
-	_player.ammo_reserve = {&"手枪弹": 36, &"步枪弹": 24}
+	_player.ammo_reserve = {&"手枪弹": 36, &"步枪弹": 24}  # deprecated field, kept for compat
+	# issue 08：设置备弹槽以便 get_reserve 返回正确值
+	_player.ammo_slots = [
+		{"ammo_type": &"手枪弹", "remaining": 3, "capacity": _weapon_a.magazine_size},
+		{"ammo_type": &"步枪弹", "remaining": 2, "capacity": _weapon_b.magazine_size},
+	]
 	var dur_arr: Array[int] = [_weapon_a.durability_max, _weapon_b.durability_max]
 	_player.weapon_durability = dur_arr
 	_player.weapon = _weapon_a
@@ -196,7 +201,7 @@ func test_ammo_display_uses_ammo_reserve() -> void:
 	_ui.open(_player)
 	# 验证 refresh_ammo 不报错
 	_ui.refresh_ammo()
-	# 测试通过即表示调用成功（内部使用 get_reserve -> ammo_reserve）
+	# 测试通过即表示调用成功（内部使用 get_reserve -> ammo_slots，issue 08）
 
 
 func test_reliability_stars_display() -> void:

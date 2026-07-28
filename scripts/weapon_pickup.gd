@@ -15,8 +15,10 @@ var _glow: GPUParticles3D
 
 func _ready() -> void:
 	# 碰撞层：让 player 能检测到
+	# collision_mask 必须包含 player 所在层（layer 1，CharacterBody3D 默认值），
+	# 否则 body_entered 永不触发——曾因 mask=0 导致丢枪后无法拾取（issue 21 regression）。
 	collision_layer = 0
-	collision_mask = 0
+	collision_mask = 1
 	# 用 body_entered 信号
 	body_entered.connect(_on_body_entered)
 
@@ -26,6 +28,9 @@ func _ready() -> void:
 		_model.scale = Vector3(0.3, 0.3, 0.3)
 		_model.position = Vector3.ZERO
 		add_child(_model)
+		# issue 21 regression fix：应用 albedo_texture（GLB 导入纹理丢失 workaround）。
+		# player.gd::change_weapon 一直有此逻辑，但拾取物漏了——导致丢地上的爆能枪无贴图。
+		Weapon.apply_texture_to_model(_model, weapon_resource.albedo_texture)
 
 	# 发光粒子
 	_glow = GPUParticles3D.new()

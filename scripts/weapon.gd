@@ -5,6 +5,7 @@ class_name Weapon
 @export var model: PackedScene # Model of the weapon
 @export var position: Vector3 # On-screen position
 @export var rotation: Vector3 # On-screen rotation
+@export var scale: Vector3 = Vector3(1, 1, 1) # On-screen scale (default 1; kenney 新武器需放大以匹配 blaster 视觉尺寸)
 @export var muzzle_position: Vector3 # On-screen position of muzzle flash
 @export var albedo_texture: Texture2D # Weapon texture (workaround for GLB import texture loss)
 
@@ -64,3 +65,25 @@ static func durability_color(ratio: float) -> Color:
 		return Color(0.9, 0.8, 0.1, 0.85)
 	else:
 		return Color(0.95, 0.15, 0.15, 0.85)
+
+
+## 给武器 GLB 实例的所有 MeshInstance3D 应用 albedo_texture。
+## workaround for GLB import texture loss（player viewmodel + weapon_pickup 共用）。
+## issue 21 regression fix：拾取物丢地上无贴图，因 _ready 未调用此逻辑。
+static func apply_texture_to_model(model_node: Node, texture: Texture2D) -> void:
+	if texture == null:
+		return
+	for mesh_inst in model_node.find_children("*", "MeshInstance3D"):
+		var mesh: Mesh = mesh_inst.mesh
+		if mesh == null:
+			continue
+		for i in range(mesh.get_surface_count()):
+			var mat: Material = mesh_inst.get_surface_override_material(i)
+			if mat == null:
+				mat = mesh.surface_get_material(i)
+				if mat == null:
+					continue
+			var dup_mat: Material = mat.duplicate()
+			if dup_mat is StandardMaterial3D:
+				dup_mat.albedo_texture = texture
+			mesh_inst.set_surface_override_material(i, dup_mat)

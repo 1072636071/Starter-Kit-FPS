@@ -17,6 +17,10 @@ const FRAG_RADIUS := 5.0
 const FRAG_DAMAGE_CENTER := 40.0
 const FRAG_DAMAGE_EDGE := 10.0
 
+# 颜色配置
+const COLOR_EMP := Color(0.3, 0.6, 1.0)
+const COLOR_FRAG := Color(1.0, 0.4, 0.1)
+
 var _detonated := false
 
 
@@ -25,6 +29,33 @@ func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	# 初始旋转让手雷有点随机感
 	angular_velocity = Vector3(randf_range(-5, 5), randf_range(-5, 5), randf_range(-5, 5))
+
+	# 按类型着色
+	_apply_type_color()
+
+	# 短暂禁用碰撞（0.15s），避免刚出手就撞到玩家自己
+	collision_mask = 0
+	get_tree().create_timer(0.15).timeout.connect(func():
+		if is_inside_tree():
+			collision_mask = 1
+	)
+
+
+func _apply_type_color() -> void:
+	var mesh_node := get_node_or_null("Mesh")
+	if mesh_node == null:
+		return
+	var mat := StandardMaterial3D.new()
+	match grenade_type:
+		&"emp":
+			mat.albedo_color = COLOR_EMP
+		&"frag":
+			mat.albedo_color = COLOR_FRAG
+		_:
+			mat.albedo_color = Color.WHITE
+	mat.metallic = 0.3
+	mat.roughness = 0.4
+	mesh_node.material_override = mat
 
 
 func _on_body_entered(_body: Node) -> void:
@@ -136,24 +167,25 @@ func _apply_emp_effect(target: Node) -> void:
 
 
 func _spawn_explosion_vfx(color: Color, radius: float) -> void:
+	# 主爆炸粒子：球形扩散
 	var particles := GPUParticles3D.new()
-	particles.amount = 48
-	particles.lifetime = 0.6
+	particles.amount = 64
+	particles.lifetime = 0.8
 	particles.one_shot = true
 	particles.explosiveness = 1.0
 	var mat := ParticleProcessMaterial.new()
 	mat.direction = Vector3.UP
 	mat.spread = 180.0
-	mat.initial_velocity_min = radius * 0.5
-	mat.initial_velocity_max = radius * 1.2
-	mat.gravity = Vector3(0, 0, 0)
-	mat.scale_min = 0.3
-	mat.scale_max = 0.8
+	mat.initial_velocity_min = radius * 0.6
+	mat.initial_velocity_max = radius * 1.5
+	mat.gravity = Vector3(0, -4.0, 0)
+	mat.scale_min = 0.2
+	mat.scale_max = 0.6
 	mat.color = color
 	particles.process_material = mat
 	var sphere := SphereMesh.new()
-	sphere.radius = 0.3
-	sphere.height = 0.6
+	sphere.radius = 0.15
+	sphere.height = 0.3
 	particles.draw_pass_1 = sphere
 	var parent := get_parent()
 	if parent == null:
@@ -162,3 +194,45 @@ func _spawn_explosion_vfx(color: Color, radius: float) -> void:
 	particles.global_position = global_position
 	particles.emitting = true
 	particles.finished.connect(particles.queue_free)
+
+	# 闪光球：瞬间膨胀后消失，增强爆炸感
+	var flash := MeshInstance3D.new()
+	var flash_mesh := SphereMesh.new()
+	flash_mesh.radius = radius * 0.4
+	flash_mesh.height = radius * 0.8
+	flash.mesh = flash_mesh
+	var flash_mat := StandardMaterial3D.new()
+	flash_mat.albedo_color = Color(color.r, color.g, color.b, 0.9)
+	flash_mat.flags_unshaded = true
+	flash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	flash.material_override = flash_mat
+	parent.add_child(flash)
+	flash.global_position = global_position
+	# 0.3s 内膨胀到满半径并淡出
+	var tw := get_tree().create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(flash, "scale", Vector3.ONE * (radius / (radius * 0.4)), 0.3) \
+		.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_property(flash_mat, "albedo_color:a", 0.0, 0.3)
+	tw.chain().tween_callback(flash.queue_free)
+
+	# 冲击波环：扁平圆环向外扩散
+	var ring := MeshInstance3D.new()
+	var ring_mesh := TorusMesh.new()
+	ring_mesh.inner_radius = 0.3
+	ring_mesh.outer_radius = 0.5
+	ring.mesh = ring_mesh
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.albedo_color = Color(color.r, color.g, color.b, 0.7)
+	ring_mat.flags_unshaded = true
+	ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ring.material_override = ring_mat
+	ring.rotation_degrees.x = 90.0  # 平放在地面
+	parent.add_child(ring)
+	ring.global_position = global_position + Vector3(0, 0.1, 0)
+	var tw2 := get_tree().create_tween()
+	tw2.set_parallel(true)
+	tw2.tween_property(ring, "scale", Vector3.ONE * radius * 2.0, 0.4) \
+		.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw2.tween_property(ring_mat, "albedo_color:a", 0.0, 0.4)
+	tw2.chain().tween_callback(ring.queue_free)

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bsna168p1m13"]
+
+[ext_resource type="Script" path="res://tests/test_shop_weapon_filter.gd" id="1_test"]
+
+[node name="TestShopWeaponFilter" type="Node3D"]
+script = ExtResource("1_test")

@@ -43,7 +43,7 @@ signal chest_reward_selected(reward_id: StringName)
 signal chest_weapon_replace_offered(weapon: Weapon)
 
 # === 本局状态 ===
-var copper: int = 10000  # 初始 1 金 = 10000 铜
+var copper: int = 999990000  # 测试：开局 99999 金（1 金 = 10000 铜）
 var xp: int = 0
 var level: int = 1
 var wave: int = 0
@@ -424,13 +424,15 @@ func _spawn_all(types: Array[StringName]) -> void:
 	var player_pos: Vector3 = _player.global_position if _player else Vector3.ZERO
 	var positions := _find_spawn_positions(types.size(), player_pos)
 
-	if not positions.is_empty():
+	# 仅当选点数量足够时才使用 NavMesh 结果；不足则回退固定出生点
+	# 否则 positions 可能比 types 短，导致下标越界
+	if positions.size() >= types.size():
 		for i in types.size():
 			_spawn_monster(types[i], positions[i], i)
 		return
 
-	# 兜底：NavMesh 选点失败，回退固定 SpawnPoints
-	push_warning("RunDirector: NavMesh选点失败，回退固定出生点")
+	# 兜底：NavMesh 选点失败/不足，回退固定 SpawnPoints
+	push_warning("RunDirector: NavMesh选点不足，回退固定出生点")
 	if spawn_points.is_empty():
 		push_warning("RunDirector: 无出生点，怪物将刷在原点")
 	var pts: Array[Marker3D] = spawn_points.duplicate()
@@ -687,11 +689,11 @@ func _apply_random_weapon_reward() -> void:
 
 	# issue 30：过滤已持有同款武器（去重）
 	# issue 24 spec 可选优化，提前实现——保留
-	var owned_resources: Array = []
+	var owned_resources: Array[Weapon] = []
 	for w in _player.weapons:
 		if w != null:
 			owned_resources.append(w)
-	var filtered: Array = []
+	var filtered: Array[Weapon] = []
 	for w in pool:
 		if w not in owned_resources:
 			filtered.append(w)
@@ -700,9 +702,9 @@ func _apply_random_weapon_reward() -> void:
 	# 若全部已持有，仍从全池抽（降级，不做金币补偿）
 
 	# 按 cost 分档加权（cost ÷ 10 为金币数）
-	var low: Array = []
-	var mid: Array = []
-	var high: Array = []
+	var low: Array[Weapon] = []
+	var mid: Array[Weapon] = []
+	var high: Array[Weapon] = []
 	for w in pool:
 		var cost_gold: int = w.weapon_cost / 10
 		if cost_gold <= 7:

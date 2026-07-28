@@ -33,9 +33,12 @@ var _shield_pulse_tween: Tween
 var _prompt_hide_tokens: Dictionary = {}
 var _prev_packing: bool = false
 
+# 小地图是否被模态 UI（商店等）隐藏——避免每帧重复 toggle
+var _minimap_hidden_by_modal: bool = false
+
 # 武器检视 UI（TAB 打开）
 var _weapon_inspect_ui: Control
-# 背包 UI（ADR 023，T 键打开）
+# 背包 UI（ADR 023，B 键打开）
 var _backpack_ui: Control
 # 按键说明面板（ADR 024，F5 打开）
 var _controls_help_ui: Control
@@ -105,6 +108,14 @@ func _ready() -> void:
 	call_deferred("_bind_player")
 	# issue 07：绑定 RunDirector 信号
 	call_deferred("_bind_run_director")
+	# 绑定静态 ShopUI 信号（main.tscn 中 ShopUI 是 HUD 的静态子节点）
+	# 信号驱动而非 _process 轮询：商店打开时 get_tree().paused=true，HUD 的
+	# PROCESS_MODE_PAUSABLE 会让 _process 停止，轮询无法触发隐藏。
+	var shop_ui := get_node_or_null("ShopUI")
+	if shop_ui:
+		_register_shop_ui(shop_ui)
+	# 监听后续动态添加的 ShopUI（测试场景中通过 add_child 注入）
+	child_entered_tree.connect(_on_child_entered_tree)
 
 
 func _process(_delta: float) -> void:
@@ -118,6 +129,38 @@ func _process(_delta: float) -> void:
 		if _minimap_coord_label:
 			var pos: Vector3 = _player.global_position
 			_minimap_coord_label.text = "X:%.0f  Z:%.0f" % [pos.x, pos.z]
+
+## 注册 ShopUI 的 opened/closed 信号——信号驱动隐藏小地图。
+## 商店打开时 get_tree().paused=true，HUD 的 _process 不会执行，
+## 因此不能用轮询方式检测商店可见性，必须用信号。
+func _register_shop_ui(shop_ui: Node) -> void:
+	if shop_ui.has_signal("opened") and not shop_ui.opened.is_connected(_on_shop_ui_opened):
+		shop_ui.opened.connect(_on_shop_ui_opened)
+	if shop_ui.has_signal("closed") and not shop_ui.closed.is_connected(_on_shop_ui_closed):
+		shop_ui.closed.connect(_on_shop_ui_closed)
+
+## 监听动态添加到 HUD 的子节点（测试场景通过 add_child 注入 ShopUI）
+## 注：child_entered_tree 在子节点 _ready 之前触发，此时 add_to_group 尚未执行，
+## 因此不能用 group 检测。改用 has_signal("opened")——脚本信号在节点实例化时即存在。
+func _on_child_entered_tree(node: Node) -> void:
+	if node is Control and node.has_signal("opened") and node.has_signal("closed"):
+		_register_shop_ui(node)
+
+func _on_shop_ui_opened() -> void:
+	_minimap_hidden_by_modal = true
+	_set_minimap_visible(false)
+
+func _on_shop_ui_closed() -> void:
+	_minimap_hidden_by_modal = false
+	_set_minimap_visible(true)
+
+## 设置小地图（动态 _minimap_frame + 静态 Minimap 节点）的可见性
+func _set_minimap_visible(v: bool) -> void:
+	if _minimap_frame:
+		_minimap_frame.visible = v
+	var minimap := get_node_or_null("Minimap")
+	if minimap:
+		minimap.visible = v
 
 
 # ============================================================
@@ -366,6 +409,12 @@ func _build_rows() -> void:
 
 func _on_ammo_updated(weapon_index: int, magazines: Array, reserves: Array) -> void:
 	_current_index = weapon_index
+	# issue 21 regression fix：丢枪/捡枪/武器爆掉后 weapons 数组长度变化，
+	# _rows 必须重建——否则 HUD 残留已丢武器的名字（"爆能枪"等）。
+	# 注意：_weapons 是 player.weapons 的引用（Array 是引用类型），size 同步变化，
+	# 所以检测对象必须是 _rows（HUD 缓存的行字典）vs _weapons 当前长度。
+	if _weapons.size() != _rows.size():
+		_build_rows()
 	for i in range(_rows.size()):
 		var row: Dictionary = _rows[i]
 		var name_label: Label = row["name_label"]
@@ -377,6 +426,12 @@ func _on_ammo_updated(weapon_index: int, magazines: Array, reserves: Array) -> v
 		var is_current := i == weapon_index
 		# 左边竖条：当前武器 accent_primary，其余透明
 		bar.color = UITheme.COLOR_ACCENT_PRIMARY if is_current else Color(1, 1, 1, 0.0)
+		# 同步武器名：替换武器（满槽再买）时 weapons[i] 已变，但 _rows.size() 未变
+		# _build_rows 不会重建，name_label.text 必须在此处刷新，否则 HUD 显示旧武器名
+		if i < _weapons.size():
+			var w: Weapon = _weapons[i]
+			if w != null and name_label.text != w.display_name:
+				name_label.text = w.display_name
 
 		if mag <= 0 and res <= 0:
 			# 彻底空弹：accent_danger 红字「空」+ 脉冲警示
@@ -927,7 +982,7 @@ func _build_minimap_frame() -> Control:
 
 
 # ============================================================
-# 背包 UI（ADR 023，T 键打开）—— 不改动
+# 背包 UI（ADR 023，B 键打开）—— 不改动
 # ============================================================
 
 func _build_backpack_ui() -> Control:

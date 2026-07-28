@@ -172,6 +172,8 @@ var grenade_charge_time: float = 0.0
 # issue 03：手雷抛物线预览
 var _arc_preview_mesh: MeshInstance3D
 var _arc_preview_material: StandardMaterial3D
+var _arc_landing_mesh: MeshInstance3D
+var _arc_landing_material: StandardMaterial3D
 @export var arc_preview_steps := 20
 @export var arc_preview_dt := 0.05
 
@@ -298,17 +300,15 @@ func _ready():
 	_shield_regen_timer = 0.0
 	_dead = false
 
-	# 初始化弹药状态（issue 09）：
-	# 弹匣按武器独立（满弹匣）；备弹为按 ammo_type 共享的弹药池，
-	# 按已装备武器的 ammo_type 建键（保底含手枪弹），初始 36 发/类
+	# 初始化弹药状态（issue 08，三层弹药流重构）：
+	# 弹匣按武器独立（满弹匣）；备弹统一走三层流：
+	# backpack_items（背包仓库）→ ammo_slots（备弹槽）→ magazine（弹匣）
+	# 旧 ammo_reserve 不再作为数据源，保留字段但清空
 	magazine.clear()
 	ammo_reserve.clear()
 	weapon_durability.clear()
-	ammo_reserve[AMMO_TYPE_PISTOL] = INITIAL_AMMO_PER_TYPE
 	for w in weapons:
 		magazine.append(w.magazine_size)
-		if not ammo_reserve.has(w.ammo_type):
-			ammo_reserve[w.ammo_type] = INITIAL_AMMO_PER_TYPE
 		weapon_durability.append(w.durability_max)
 
 	if not weapons.is_empty():
@@ -316,18 +316,18 @@ func _ready():
 		initiate_change_weapon(weapon_index)
 	_emit_ammo_updated()
 
-	# 初始化备弹槽：为首把已装备武器提供 100 发初始弹药
-	ammo_slots.clear()
+	# 初始化背包弹药：100 发首把武器弹种写入背包层（issue 08）
+	# ammo_slots 初始全空，玩家按 B 打开背包手动分配到备弹槽
+	backpack_items.clear()
+	backpack_weight = 0.0
 	if not weapons.is_empty():
-		var first_ammo_type: StringName = weapons[0].ammo_type
-		var mag_size := maxi(1, weapons[0].magazine_size)
-		var reload_count := int(ceil(100.0 / float(mag_size)))
-		ammo_slots.append({"ammo_type": first_ammo_type, "remaining": reload_count, "capacity": reload_count})
-		for _i in range(1, AMMO_SLOT_COUNT):
-			ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})
-	else:
-		for _i in range(AMMO_SLOT_COUNT):
-			ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})
+		var init_ammo_type: StringName = weapons[0].ammo_type
+		var init_weight: float = ITEM_WEIGHTS.get(init_ammo_type, 0.01)
+		backpack_add(init_ammo_type, &"ammo", 100, init_weight)
+	# 备弹槽初始化：全空
+	ammo_slots.clear()
+	for _i in range(AMMO_SLOT_COUNT):
+		ammo_slots.append({"ammo_type": &"", "remaining": 0, "capacity": 0})
 
 	# 近战视图模型：实例化一次，挂 CameraItem 下（与 Container 平级，不在 Container 内
 	# 否则会被 change_weapon() 的 remove_child() 清掉）。初始隐藏。
@@ -363,6 +363,9 @@ func _ready():
 		box.size.z = melee_reach
 		hit_shape.shape = box
 
+	# issue 23：手雷初始数量（开局赠送，避免按 G 无反应）
+	grenades = {&"emp": 3, &"frag": 3}
+
 	# issue 03：手雷抛物线预览 Mesh —— 挂在 CameraItem 下，仅武器相机可见（layer 2）
 	_arc_preview_mesh = MeshInstance3D.new()
 	_arc_preview_mesh.name = "ArcPreview"
@@ -373,6 +376,22 @@ func _ready():
 	_arc_preview_material.flags_unshaded = true
 	_arc_preview_material.flags_no_depth_test = true
 	_arc_preview_mesh.visible = false
+
+	# issue 03：落点指示器 —— 小球标记抛物线落地点
+	_arc_landing_mesh = MeshInstance3D.new()
+	_arc_landing_mesh.name = "ArcLanding"
+	_arc_landing_mesh.layers = 2
+	var landing_sphere := SphereMesh.new()
+	landing_sphere.radius = 0.15
+	landing_sphere.height = 0.3
+	_arc_landing_mesh.mesh = landing_sphere
+	_arc_landing_material = StandardMaterial3D.new()
+	_arc_landing_material.albedo_color = Color(1.0, 1.0, 0.0, 0.8)
+	_arc_landing_material.flags_unshaded = true
+	_arc_landing_material.flags_no_depth_test = true
+	_arc_landing_mesh.material_override = _arc_landing_material
+	_arc_landing_mesh.visible = false
+	camera_item.add_child(_arc_landing_mesh)
 
 # 物理处理：移动、重力、碰撞 —— 必须在固定物理 tick 中运行
 func _physics_process(delta):
@@ -495,23 +514,28 @@ func _emit_ammo_updated() -> void:
 	if not is_inside_tree(): return
 	ammo_updated.emit(weapon_index, magazine.duplicate(), get_reserves_snapshot())
 
-## 查询某武器对应弹药池的剩余备弹（issue 09）
+## @deprecated（issue 08）：从备弹槽汇总计算某武器的备弹发数（= 换弹次数 × 弹匣容量）
+## 过渡期保留 API 兼容，内部改读 ammo_slots
 func get_reserve(w: Weapon) -> int:
 	if w == null:
 		return 0
-	return int(ammo_reserve.get(w.ammo_type, 0))
+	return get_available_reloads(w.ammo_type) * w.magazine_size
 
-## 向弹药池补充备弹（issue 09）；可为负表示消耗。上限检查由调用方负责
+## @deprecated（issue 08）：向背包补充弹药（过渡期兼容，内部改走 backpack_add）
 func add_reserve(w: Weapon, amount: int) -> void:
 	if w == null:
 		return
-	ammo_reserve[w.ammo_type] = get_reserve(w) + amount
+	var weight_per_unit: float = ITEM_WEIGHTS.get(w.ammo_type, 0.01)
+	if amount > 0:
+		backpack_add(w.ammo_type, &"ammo", amount, weight_per_unit)
+	elif amount < 0:
+		backpack_remove(w.ammo_type, -amount)
 
-## 按武器展开当前备弹快照（与 weapons 同序），从备弹槽计算各弹种还能换弹次数
+## 按武器展开当前备弹快照（与 weapons 同序），返回实际发数（issue 08：从弹匣次数换算为发数）
 func get_reserves_snapshot() -> Array[int]:
 	var out: Array[int] = []
 	for w in weapons:
-		out.append(get_available_reloads(w.ammo_type))
+		out.append(get_available_reloads(w.ammo_type) * w.magazine_size)
 	return out
 
 ## 查询备弹槽中各弹种还能换弹的次数
@@ -671,7 +695,7 @@ func handle_controls(delta):
 			is_charging_grenade = true
 			grenade_charge_time = 0.0
 
-	# 背包（T 键）
+	# 背包（B 键打开）
 	if Input.is_action_just_pressed("backpack"):
 		if not _is_packing:
 			action_backpack()
@@ -983,7 +1007,7 @@ func action_weapon_toggle():
 
 		Audio.play("sounds/weapon_change.ogg")
 
-# 背包（T 键，ADR 023）
+# 背包（B 键，ADR 023）
 # 暂停时 / 死亡 / 商店 / 升级中不可打开
 func action_backpack() -> void:
 	if get_tree().paused:
@@ -1012,11 +1036,23 @@ func action_drop_weapon() -> void:
 	var pickup_scene: PackedScene = load("res://scenes/weapon_pickup.tscn")
 	if pickup_scene == null:
 		return
+	# 注意：export 字段（weapon_resource / durability_current）必须在 add_child 前设置，
+	# 因为 weapon_pickup._ready() 依赖 weapon_resource 来创建模型；
+	# 但 global_position 必须在 add_child 后设置——节点未入树时访问 global_transform 会触发
+	# "!is_inside_tree()" 警告（见 player.gd:1016 旧行为）。
+	# issue 21 regression fix：拾取物必须生成在玩家身体外（>1.5m 半径 + 0.3m 玩家半径），
+	# 否则 mask=1 时 body_entered 会在下一物理帧瞬间触发，导致"丢枪即捡回"。
+	# 朝玩家面向方向（相机前方水平投影）抛出 2.5m，留 0.7m 安全余量。
+	var forward: Vector3 = -camera.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.001:
+		forward = Vector3.FORWARD
+	forward = forward.normalized()
 	var pickup: Node3D = pickup_scene.instantiate()
-	pickup.global_position = global_position + Vector3(0, 0.3, 0)
 	pickup.weapon_resource = dropped_weapon
 	pickup.durability_current = dropped_durability
 	get_parent().add_child(pickup)
+	pickup.global_position = global_position + Vector3(0, 0.3, 0) + forward * 2.5
 
 	# 从数组中移除
 	weapons.remove_at(idx)
@@ -1040,6 +1076,18 @@ func action_drop_weapon() -> void:
 	_emit_ammo_updated()
 
 # issue 23：投掷手雷
+
+## 计算投掷起点：玩家身体位置 + 视线前方 0.5m + 胸部高度
+func _get_throw_origin() -> Vector3:
+	var cam_forward := -camera.global_transform.basis.z
+	cam_forward.y = 0.0
+	cam_forward = cam_forward.normalized()
+	return global_position + cam_forward * 0.5 + Vector3(0, 1.0, 0)
+
+## 计算投掷方向：相机视线方向 + 略微上扬
+func _get_throw_direction() -> Vector3:
+	return (camera.global_transform.basis * Vector3(0, 0.15, -1)).normalized()
+
 func _throw_grenade() -> void:
 	if grenades.get(selected_grenade_type, 0) <= 0:
 		return
@@ -1051,18 +1099,21 @@ func _throw_grenade() -> void:
 	var charge_ratio := clampf(grenade_charge_time / grenade_charge_max, 0.1, 1.0)
 	var throw_speed := lerpf(grenade_min_speed, grenade_max_speed, charge_ratio)
 
-	# 投掷方向：相机前方 + 略微上扬
-	var throw_dir := (camera.global_transform.basis * Vector3(0, 0.15, -1)).normalized()
+	var throw_dir := _get_throw_direction()
+	var throw_origin := _get_throw_origin()
 
 	# 实例化手雷弹丸
 	var grenade_scene: PackedScene = load("res://scenes/grenade_projectile.tscn")
 	if grenade_scene == null:
 		return
 	var grenade: RigidBody3D = grenade_scene.instantiate()
-	grenade.global_position = camera.global_position + (camera.global_transform.basis * Vector3(0.15, -0.15, -0.8))
 	grenade.grenade_type = selected_grenade_type
-	grenade.linear_velocity = throw_dir * throw_speed
+	# 必须先 add_child 再设 global_position（未入树时全局坐标无效）
 	get_parent().add_child(grenade)
+	grenade.global_position = throw_origin
+	grenade.linear_velocity = throw_dir * throw_speed
+	# 碰撞豁免：手雷不撞投掷者
+	grenade.add_collision_exception_with(self)
 
 	grenade_charge_time = 0.0
 
@@ -1098,14 +1149,16 @@ func change_weapon():
 
 	weapon_model.position = weapon.position
 	weapon_model.rotation_degrees = weapon.rotation
+	weapon_model.scale = weapon.scale # issue 22：kenney 新武器模型尺寸偏小，按资源 scale 放大
 
 	# Step 3. Set model to only render on layer 2 (the weapon camera)
 
 	for child in weapon_model.find_children("*", "MeshInstance3D"):
 		child.layers = 2
-		# Apply weapon texture if configured (workaround for GLB import texture loss)
-		if weapon.albedo_texture:
-			_apply_texture_to_mesh(child, weapon.albedo_texture)
+	# Apply weapon texture if configured (workaround for GLB import texture loss)
+	# issue 21 regression：拾取物丢地上无贴图——逻辑提取为 Weapon.apply_texture_to_model 静态方法共用
+	if weapon.albedo_texture:
+		Weapon.apply_texture_to_model(weapon_model, weapon.albedo_texture)
 
 	# Set weapon data
 
@@ -1119,22 +1172,6 @@ func change_weapon():
 # 期间：禁射、切枪取消、备弹不足只装可用数
 # 完成：reserve → magazine 转移，emit ammo_updated
 # 视觉：复用 container Tween 让武器移出视野再归位（T5）；HUD 进度条由 HUD 自行驱动
-
-# 确保武器网格的材质上设置了纹理（GLB 导入时纹理可能丢失）
-func _apply_texture_to_mesh(mesh_instance: MeshInstance3D, texture: Texture2D) -> void:
-	var mesh := mesh_instance.mesh
-	if mesh == null:
-		return
-	for i in range(mesh.get_surface_count()):
-		var mat := mesh_instance.get_surface_override_material(i)
-		if mat == null:
-			mat = mesh.surface_get_material(i)
-		if mat == null:
-			continue
-		var dup_mat := mat.duplicate()
-		if dup_mat is StandardMaterial3D:
-			dup_mat.albedo_texture = texture
-		mesh_instance.set_surface_override_material(i, dup_mat)
 
 func action_reload(index: int) -> void:
 	if is_reloading: return
@@ -1480,37 +1517,48 @@ func _get_arc_points(origin: Vector3, direction: Vector3, speed: float, steps: i
 			break
 	return points
 
-## 每帧更新抛物线预览：蓄力中 → 绘制点线；否则 → 隐藏
+## 每帧更新抛物线预览：蓄力中 → 绘制弧线+落点；否则 → 隐藏
 func _update_arc_preview() -> void:
 	if not is_charging_grenade:
 		if _arc_preview_mesh.visible:
 			_arc_preview_mesh.visible = false
 			_arc_preview_mesh.mesh = null
+		if _arc_landing_mesh.visible:
+			_arc_landing_mesh.visible = false
 		return
 
 	# 计算当前蓄力对应的投掷速度
 	var charge_ratio := clampf(grenade_charge_time / grenade_charge_max, 0.1, 1.0)
 	var throw_speed := lerpf(grenade_min_speed, grenade_max_speed, charge_ratio)
-	var throw_dir := (camera.global_transform.basis * Vector3(0, 0.15, -1)).normalized()
+	var throw_dir := _get_throw_direction()
 
 	# 起点：与 _throw_grenade 一致的投掷点（世界坐标）
-	var origin := camera.global_position + (camera.global_transform.basis * Vector3(0.15, -0.15, -0.8))
+	var origin := _get_throw_origin()
 
 	# 计算抛物线点（世界坐标），转为 CameraItem 本地坐标
 	var world_points := _get_arc_points(origin, throw_dir, throw_speed)
 	if world_points.is_empty():
+		if _arc_landing_mesh.visible:
+			_arc_landing_mesh.visible = false
 		return
 
 	var local_points: Array[Vector3] = []
 	for wp in world_points:
 		local_points.append(camera_item.to_local(wp))
 
-	# 构建 ImmediateMesh 绘制离散点（白色小方点）
+	# 构建 ImmediateMesh 绘制弧线（LINE_STRIP，白色可见线条）
 	var im := ImmediateMesh.new()
-	im.surface_begin(Mesh.PRIMITIVE_POINTS, _arc_preview_material)
+	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, _arc_preview_material)
 	for lp in local_points:
 		im.surface_add_vertex(lp)
 	im.surface_end()
 
 	_arc_preview_mesh.mesh = im
 	_arc_preview_mesh.visible = true
+
+	# 落点指示器：放在最后一个弧线点位置
+	if local_points.size() > 0:
+		_arc_landing_mesh.position = local_points[local_points.size() - 1]
+		_arc_landing_mesh.visible = true
+	else:
+		_arc_landing_mesh.visible = false

@@ -50,7 +50,8 @@ UI 显示自动进位：12345 铜 → "1金 23银 45铜"。
 ```
 背包（重量制，容量大）
   │
-  │ T键：打开背包UI → 拖拽分配 → 关UI后1.5s整理动画
+  │ B键：打开/关闭背包UI → 拖拽分配 → 关UI后1.5s整理动画
+  │ T键：整理并关闭（语义快捷键，效果同 B/ESC 关闭）
   │ （可移动，不可射击）
   ▼
 身上备弹槽（10个，每槽=一弹匣量，可自由分配弹种）
@@ -86,13 +87,13 @@ UI 显示自动进位：12345 铜 → "1金 23银 45铜"。
 - 换弹时消耗一个满槽填充弹匣
 - 槽位打空后必须从背包补货
 
-### 5. T 键操作
+### 5. B 键打开 / T 键整理
 
-- 输入动作 `backpack`，绑定 T 键
-- 按下打开全屏背包 UI（暂停，`PROCESS_MODE_WHEN_PAUSED`）
-- 左侧列出背包物品（按类型分组），右侧展示 10 个备弹槽
+- 输入动作 `backpack`，绑定 **B 键**：toggle 打开/关闭全屏背包 UI（暂停，`PROCESS_MODE_WHEN_PAUSED`）
+- 输入动作 `organize`，绑定 **T 键**：仅在背包 UI 打开时有效，触发"整理并关闭"——效果等同 B/ESC 关闭（关闭 UI 并启动 1.5s 整理动画），语义是"整理物资"快捷键
+- 按下 B 打开：左侧列出背包物品（按类型分组），右侧展示 10 个备弹槽
 - 点击/拖拽物品分配
-- 关闭 UI 后进入 1.5s 实时的"整理"状态（可移动不可射击）
+- 关闭 UI（B/T/ESC/关闭按钮任一）后进入 1.5s 实时的"整理"状态（可移动不可射击）
 
 ### 6. 警戒范围翻倍
 
@@ -117,7 +118,7 @@ UI 显示自动进位：12345 铜 → "1金 23银 45铜"。
 - `run_director.gd`: `gold: int` → `copper: int`（内部统一铜），新增 `add_copper/spend_copper`，`gold_changed` 改为 `currency_changed`
 - `shop_ui.gd`: AMMO_CONFIG 价格单位改为铜，GRENADE_CONFIG 改为银，武器价格改为金
 - `hud.gd`: 金币显示改为金银铜混合格式
-- `player.gd`: 新增 `backpack_weight/backpack_max_weight/ammo_slots`，新增 `action_backpack`
-- 新建 `scripts/backpack_ui.gd` + `scenes/backpack_ui.tscn`
+- `player.gd`: 新增 `backpack_weight/backpack_max_weight/ammo_slots`，新增 `action_backpack`（B 键触发）
+- 新建 `scripts/backpack_ui.gd`（无 `.tscn`，HUD 用 `script.new()` 实例化；根 `Control` 必须在 `_ready()` 调用 `set_anchors_preset(Control.PRESET_FULL_RECT)`，见 ADR 027「布局与缩放」决策）（B 键 toggle 打开/关闭，T 键整理并关闭，ESC 关闭）
 - `objects/monster_base.gd` / `monster_melee.gd` / `monster_ranged.gd` / `enemy.gd`：感知范围翻倍
 - `alert_system.gd`：无需改动（alert 半径由调用方传入）

@@ -64,6 +64,10 @@ func _on_card_pressed(choice: Dictionary) -> void:
 	# 其他奖励类型由 chest 自身处理 queue_free
 	if id != &"random_weapon":
 		_chest = null
+		# 非随机武器奖励：流程结束，恢复游戏暂停
+		# （random_weapon 等替换对话框关闭后由 _finish_chest_reward 恢复）
+		if is_inside_tree() and get_tree().paused:
+			get_tree().paused = false
 	_is_closing = false
 
 # ============================================================
@@ -247,3 +251,6 @@ func _finish_chest_reward() -> void:
 	_chest = null
 	visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# random_weapon 流程结束：恢复游戏暂停（_on_card_pressed 时未恢复，等替换对话框关闭）
+	if is_inside_tree() and get_tree().paused:
+		get_tree().paused = false

@@ -16,7 +16,7 @@
 
 - 打开时 `get_tree().paused = true`、鼠标 `MOUSE_MODE_VISIBLE`、面板 `PROCESS_MODE_WHEN_PAUSED`。
 - 成为项目第 4 个暂停源（原 3 个：Shop walk-in / Level Up / Game Over），并入 Pause Semantics（ADR 015）的"暂停源互斥"框架。
-- 由 HUD（`scripts/hud.gd`）托管，复用武器检视 UI 的 `_build_*_ui()` 加载 `scenes/controls_help_ui.tscn` 模式。
+- 由 HUD（`scripts/hud.gd`）托管，复用武器检视 UI 的 `_build_*_ui()` 托管模式；与武器检视 UI 不同的是，**HUD 通过 `load("res://scripts/controls_help_ui.gd")` + `script.new()` 实例化**而非 `.tscn` 加载（与 `backpack_ui.gd` 同模式）。因此根 `Control` 必须在 `_ready()` 中调用 `set_anchors_preset(Control.PRESET_FULL_RECT)` 铺满父节点（见 ADR 027「布局与缩放」决策）。
 - 新增输入动作 `controls_help`，绑定 F5。
 
 ## 被否决的替代
@@ -29,7 +29,7 @@
 
 - Pause Semantics（ADR 015 / CONTEXT.md）需补第 4 个暂停源，明确优先级：**死亡 > 商店 / 升级 / Controls Help**；Controls Help 为最低优先级，可被任意其它暂停源或玩家主动关闭接管。
 - 新增输入动作 `controls_help`（F5）。
-- HUD 新增托管代码与子场景 `scenes/controls_help_ui.tscn` + `scripts/controls_help_ui.gd`。
+- HUD 新增托管代码 + `scripts/controls_help_ui.gd`（无 `.tscn`，由 HUD 用 `script.new()` 实例化）。
 
 ## 已决议的设计决策（逐次 grill）
 
@@ -46,7 +46,7 @@
 **仅游戏进行中**（`get_tree().paused == false`）。已被其他暂停源（商店/升级/死亡）暂停时 F5 无效。理由：按键说明是操作参考，只在"能操作"的上下文中才有意义；避免暂停源叠加的交互复杂度。与武器检视 UI（TAB）的 `_can_open_weapon_inspect()` 逻辑一致。
 
 ### 5. 文件命名约定 ✅
-**`scenes/controls_help_ui.tscn` + `scripts/controls_help_ui.gd`。** 遵循项目 `<功能>_ui.t/scn` 命名模式（与 `weapon_inspect_ui`、`backpack_ui` 一致）。场景 UID 按语义化约定使用 `bcontrolshelp24`。
+**`scripts/controls_help_ui.gd`（无 `.tscn`）。** HUD 通过 `load("res://scripts/controls_help_ui.gd")` + `script.new()` 实例化（与 `backpack_ui.gd` 同模式，区别于 `weapon_inspect_ui.tscn` 的 `.tscn` 加载模式）。脚本侧 `_ready()` 必须调用 `set_anchors_preset(Control.PRESET_FULL_RECT)` 铺满父节点（见 ADR 027「布局与缩放」决策，规避 0×0 父节点导致 UI 挤在左上角的 bug）。
 
 ---
 
